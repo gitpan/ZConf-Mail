@@ -1,0 +1,168 @@
+#!/usr/bin/perl
+#Copyright (c) 2008, Zane C. Bowers
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+use ZConf::Mail;
+use Getopt::Std;
+use Curses::UI;
+
+#version function
+sub main::VERSION_MESSAGE {
+        print "zcmailcompose 0.0.0\n";
+};
+
+#print help
+sub main::HELP_MESSAGE {
+        print "\n".
+		      "-a <account>  The account to use for sending.".
+		      "-t <addresses>  The to addresses.\n".
+			  "-c <addresses>  The CC addresses.\n".
+			  "-b <addresses>  The BCC addresses.\n\n".
+              "Atleast 1 to address is required.\n\n".
+              "Examples:\n".
+              "zcmailcompose -t foo\@bar   Sends a email to foo\@bar.\n".
+			  "zcmailcompose -t foo\@bar,this\@that   Sends a email to foo\@bar and this\@thar.\n";
+		exit 1;
+};
+
+#the send function
+sub mailsend{
+	my $account=$_[0];
+	my $subject=$_[1];
+	my $body=$_[2];
+
+print $account."\n";
+print $subject;
+exit 0;
+}
+
+#gets the options
+my %opts=();
+getopts('a:t:c:b:', \%opts);
+my %args;
+
+#makes sure that -a is defined
+if (!defined($opts{a})) {
+	warn('zcmailcompose: No account defined.');
+	exit 1;
+}
+
+#makes sure that -t is defined
+if (!defined($opts{t})) {
+	warn('zcmailcompose: No to defined.');
+	exit 1;
+}
+
+#breaks the to appart
+my @to=split(/,/, $opts{t});
+
+#breaks the cc apart if needed
+my @cc;
+if (defined($opts{c})) {
+	@cc=split(/,/, $opts{c});
+}
+
+#breaks the cc apart if needed
+my @bcc;
+if (defined($opts{b})) {
+	@bcc=split(/,/, $opts{b});
+}
+
+#makes sure the defined account is a smtp account
+if (!$opts{a} =~ /^smtp\//) {
+	warn('zcmailcompose: Not a sendable account.');
+	exit 1;
+}
+
+#initializes it
+my $mail=ZConf::Mail->new;
+
+#makes sure it is sendable
+if (!$mail->sendable($opts{a})) {
+	warn('zcmailcompose: Not a sendable account.');
+	exit $mail->{error};
+}
+
+#init cui
+my $cui = Curses::UI->new( -clear_on_exit => 1);
+
+#creates the window
+my $win = $cui->add('window', 'Window', {});
+
+#creates the container
+my $container = $win->add('container', 'Container');
+
+#creates the label for the subject text entry
+my $subjectlabel = $container->add('subjectlabel', 'Label', -Text=>'Subject:' );
+
+#the text of the subject
+my $subject=$container->add('subject', 'TextEntry', -x=>9);
+
+#body
+my $body=$container->add('body', 'TextEditor', -y=>3,
+						 -wrapping=>1, -vscrollbar=>1
+						 -showlines=>1);
+
+#quit and send buttons
+my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
+							-buttons=>[{-label=>'quit',
+										-value=>'quit',
+										-onpress=>sub{exit 0}
+										},
+									   {-label=>'send',
+										-value=>'send',
+										-onpress=>sub{my $self=$_[0];
+													  #gets the subject
+													  my $subject=$subject->get();
+													  #gets the body
+													  my $body=$body->get();
+													  #creates the mail
+													  my $mesg=$mail->createEmailSimple({
+																						 account=>$opts{a},
+																						 to=>\@to,
+																						 cc=>\@cc,
+																						 subject=>$subject,
+																						 body=>$body
+																						 }
+																						);
+													  #sends the mail
+													  $mail->send({
+																   account=>$opts{a},
+																   to=>\@to,
+																   cc=>\@cc,
+																   bcc=>\@bcc,
+																   subject=>$subject,
+																   mail=>$mesg->as_string
+																   }
+																  );
+													  exit;
+												  }
+										}
+									   ]);
+
+#creates the label for the subject text entry
+my $bodylabel = $container->add('bodylabel', 'Label', -Text=>'Body:', -y=>2 );
+
+$cui->mainloop;
