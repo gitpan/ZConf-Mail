@@ -18,11 +18,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 0.1.1
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.1';
+our $VERSION = '0.2.0';
 
 
 =head1 SYNOPSIS
@@ -1558,6 +1558,35 @@ sub getAccountArgs{
 	return %vars;
 }
 
+=head2 getSet
+
+This gets what the current set is.
+
+    my $set=$zcmail->getSet;
+    if($zcmail->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub getSet{
+	my $self=$_[0];
+
+	my $set=$self->{zconf}->getSet('mail');
+	if($self->{zconf}->{error}){
+		warn('ZConf-Mail getSet:2: ZConf error getting the loaded set the config "mail".'.
+			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf error getting the loaded set the config "mail".'.
+			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	return $set;
+}
+
 =head2 init
 
 This is used for initiating the config used by ZConf.
@@ -1593,6 +1622,38 @@ sub init{
 	}
 
 	return 1;
+}
+
+=head2 listSets
+
+This lists the available sets.
+
+    my @sets=$zcmail->listSets;
+    if($zcmail->{error}){
+        print "Error!";
+    }
+
+=cut
+
+sub listSets{
+	my $self=$_[0];
+
+	#blanks any previous errors
+	$self->errorBlank;
+
+	my @sets=$self->{zconf}->getAvailableSets('mail');
+	if($self->{zconf}->{error}){
+		warn('ZConf-Mail listSets:2: ZConf error listing sets for the config "mail".'.
+			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf error listing sets for the config "mail".'.
+			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	return @sets;
 }
 
 =head2 modAccount
@@ -1679,6 +1740,48 @@ sub modAccount{
 		warn('ZConf-Mail modAccount:36: ZConf failed to write the set out');
 		$self->{error}=36;
 		$self->{errorString}='ZConf failed to write the set out.';
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 readSet
+
+This reads a specific set. If the set specified
+is undef, the default set is read.
+
+    #read the default set
+    $zcmail->readSet();
+    if($zcmail->{error}){
+        print "Error!\n";
+    }
+
+    #read the set 'someSet'
+    $zcmail->readSet('someSet');
+    if($zcmail->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub readSet{
+	my $self=$_[0];
+	my $set=$_[1];
+
+	
+	#blanks any previous errors
+	$self->errorBlank;
+
+	$self->{zconf}->read({config=>'mail', set=>$set});
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-Mail readSet:2: ZConf error reading the config "mail".'.
+			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf error reading the config "mail".'.
+			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
 		return undef;
 	}
 
