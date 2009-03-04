@@ -20,7 +20,10 @@ WriteMakefile(
 				  'Mail::Box::Manager'=>0,
 				  'IO::MultiPipe'=>0,
 				  'ZConf'=>0,
-				  'Curses::UI'=>0
+				  'Curses::UI'=>0,
+				  'Email::Abstract'=>0,
+				  'File::MimeInfo::Magic'=>0,
+				  'Email::Date'=>0,
 				  },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'ZConf-Mail-*' },

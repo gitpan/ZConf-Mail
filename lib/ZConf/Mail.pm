@@ -11,6 +11,11 @@ use IO::MultiPipe;
 use ZConf;
 use warnings;
 use strict;
+use MIME::Tools;
+use Email::Abstract;
+use File::MimeInfo::Magic;
+use Email::Date;
+
 
 =head1 NAME
 
@@ -18,11 +23,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 0.2.0
+Version 0.3.0
 
 =cut
 
-our $VERSION = '0.2.0';
+our $VERSION = '0.3.0';
 
 
 =head1 SYNOPSIS
@@ -649,7 +654,7 @@ sub createAccount{
 
 =head2 createEmailSimple
 
-Creates a new Email::Simple object. One 
+Creates a new Email::Simple object.
 
 =head3 function args
 
@@ -691,6 +696,12 @@ sub createEmailSimple{
 		$self->{errorString}='A required hash arguement was not defined.';
 		return undef;
 	}
+
+	my %Aargs=$self->getAccountArgs($args{account});
+	if ($self->{error}) {
+		warn('ZConf-Mail createEmailSimpe: getAccountArgs errors');
+		return undef;
+	}
 	
 	#makes sure that either to or cc is given
 	if (!defined($args{cc}) && !defined($args{to})) {
@@ -701,7 +712,7 @@ sub createEmailSimple{
 	}
 
 	my $mail=Email::Simple->create(header=>[Subject=>$args{subject}], body=>$args{body});
-	
+
 	if (!$mail) {
 		warn('ZConf-Mail createEmailSimple:31: Failed to create an Email::Simple object');
 		$self->{error}=31;
@@ -716,14 +727,129 @@ sub createEmailSimple{
 	}
 
 	#process the cc stuff
-	if (defined($args{cc})){
+	if (defined($args{cc}[0])){
 		my $to=join(', ', @{$args{cc}});
 		$mail->header_set('CC'=>$to);
 	}
 
 	$mail->header_set('Subject'=>$args{subject});
 
+	$mail->header_set('From'=>$Aargs{from});
+
 	return $mail;
+}
+
+=head2 createMimeEntity
+
+This create a new MIME::Entity object.
+
+=head3 function args
+
+The three following are required.
+
+    account
+    subject
+    body
+
+=head4 account
+
+This is the account is being setup for.
+
+=head4 to
+
+An array of To addresses.
+
+=head4 cc
+
+An array of CC addresses.
+
+=head4 subject
+
+The subject of the message.
+
+=head4 body
+
+The body of the message.
+
+=head4 files
+
+An array of files to attach.
+
+=cut
+
+sub createMimeEntity{
+	my $self=$_[0];
+	my %args;
+	if(defined($_[1])){
+		%args= %{$_[1]};
+	}
+
+	$self->errorBlank;
+
+	#makes sure the args for the account, subject, and body are defined
+	if (!defined($args{account}) || (!defined($args{subject}) || !defined($args{body}))) {
+		warn('ZConf-Mail createEmailMime:5: A required hash arguement was not defined' );
+		$self->{error}='5';
+		$self->{errorString}='A required hash arguement was not defined.';
+		return undef;
+	}
+
+	my %Aargs=$self->getAccountArgs($args{account});
+	if ($self->{error}) {
+		warn('ZConf-Mail createEmailSimpe: getAccountArgs errors');
+		return undef;
+	}
+
+	#makes sure that either to or cc is given
+	if (!defined($args{cc}[0]) && !defined($args{to}[0])) {
+		warn('ZConf-Mail createEmailMime:5: Neither to or cc given' );
+		$self->{error}=5;
+		$self->{errorString}='Neither to or cc given.';
+		return undef;
+	}
+
+	my $email = Email::Abstract->new('');
+
+	#process the to stuff
+	if (defined($args{to})){
+		my $to=join(', ', @{$args{to}});
+		$email->set_header('To'=>$to);
+	}
+
+	#process the cc stuff
+	if (defined($args{cc}[0])){
+		my $to=join(', ', @{$args{cc}});
+		$email->set_header('CC'=>$to);
+	}
+
+	$email->set_header('Subject'=>$args{subject});
+
+	$email->set_header('From'=>$Aargs{from});
+
+	$email->set_header('Date'=>format_date);
+
+	$email->set_body($args{body});
+
+	my $me=$email->cast("MIME::Entity");
+
+	#attach all the files
+	my $int=0;
+	while ($args{files}[$int]) {
+		if (! -e $args{files}[$int]) {
+			warn('ZConf-Mail createEmailMime:38: "'.$args{files}[0].'" does not exist');
+			$self->{error}=38;
+			$self->{errorString}='"'.$args{files}[0].'" does not exist';
+			return undef;
+		}
+
+		my $mimetype=mimetype($args{files}[$int]);
+
+		$me->attach(Type=>$mimetype, Path=>$args{files}[0]);
+
+		$int++;
+	}
+
+	return $me;
 }
 
 =head2 delAccount
@@ -2391,6 +2517,10 @@ ZConf error.
 
 'saveTo' is not enabled for this account. This means it is either
 undefined or set to ''.
+
+=head2 38
+
+File does not exist.
 
 =head1 AUTHOR
 

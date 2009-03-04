@@ -30,7 +30,7 @@ use Curses::UI;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcmailcompose 0.0.0\n";
+        print "zcmailcompose 0.1.0\n";
 };
 
 #print help
@@ -39,6 +39,7 @@ sub main::HELP_MESSAGE {
 		      "-a <account>  The account to use for sending.\n".
 		      "-t <addresses>  The to addresses.\n".
 			  "-c <addresses>  The CC addresses.\n".
+			  "-f <file>  File to attach.\n".
 			  "-b <addresses>  The BCC addresses.\n\n".
               "Atleast 1 to address is required.\n\n".
               "Examples:\n".
@@ -60,7 +61,7 @@ exit 0;
 
 #gets the options
 my %opts=();
-getopts('a:t:c:b:', \%opts);
+getopts('a:t:c:b:f:', \%opts);
 my %args;
 
 #makes sure that -a is defined
@@ -88,6 +89,12 @@ if (defined($opts{c})) {
 my @bcc;
 if (defined($opts{b})) {
 	@bcc=split(/,/, $opts{b});
+}
+
+#breackes the files apart if needed
+my @files;
+if (defined($opts{f})) {
+	@files=split(/,/, $opts{f});
 }
 
 #makes sure the defined account is a smtp account
@@ -139,14 +146,15 @@ my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
 													  #gets the body
 													  my $body=$body->get();
 													  #creates the mail
-													  my $mesg=$mail->createEmailSimple({
-																						 account=>$opts{a},
-																						 to=>\@to,
-																						 cc=>\@cc,
-																						 subject=>$subject,
-																						 body=>$body
-																						 }
-																						);
+													  my $mesg=$mail->createMimeEntity({
+																					   account=>$opts{a},
+																					   to=>\@to,
+																					   cc=>\@cc,
+																					   files=>\@files,
+																					   subject=>$subject,
+																					   body=>$body
+																					   }
+																					  );
 													  #sends the mail
 													  $mail->send({
 																   account=>$opts{a},
@@ -154,9 +162,12 @@ my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
 																   cc=>\@cc,
 																   bcc=>\@bcc,
 																   subject=>$subject,
-																   mail=>$mesg->as_string
+																   mail=>$mesg->stringify
 																   }
 																  );
+													  if ($self->{error}) {
+														  exit $self->{error};
+													  }
 													  exit;
 												  }
 										}

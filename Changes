@@ -1,5 +1,11 @@
 Revision history for ZConf-Mail
 
+0.2.0	2009-03-04/6:00
+		-Added 'deliverIMAP' and 'createMimeEntity'.
+		-SMTP can now save the sent mail.
+		-'createEmailSimple' now no longer tries to create 'To' or
+			'CC' headers if it has nothing.
+
 0.2.0	2009-02-23/02:30
 		-Add 'getSet', 'listSets', and 'readSet'.
 
