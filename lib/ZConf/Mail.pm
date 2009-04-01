@@ -11,11 +11,11 @@ use IO::MultiPipe;
 use ZConf;
 use warnings;
 use strict;
-use MIME::Tools;
-use Email::Abstract;
+use MIME::Lite;
 use File::MimeInfo::Magic;
 use Email::Date;
-
+use Sys::Hostname;
+use MIME::QuotedPrint;
 
 =head1 NAME
 
@@ -23,11 +23,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 0.3.0
+Version 0.3.1
 
 =cut
 
-our $VERSION = '0.3.0';
+our $VERSION = '0.3.1';
 
 
 =head1 SYNOPSIS
@@ -102,7 +102,8 @@ sub new {
 	$self->{legal}{mbox}=['mbox', 'deliverTo', 'deliverToFolder', 'fetchable'];
 	$self->{legal}{smtp}=['user', 'pass', 'auth', 'useSSL',
 						  'server', 'port', 'name', 'from',
-						  'name', 'timeout', 'saveTo', 'saveToFolder'];
+						  'name', 'timeout', 'saveTo', 'saveToFolder', 
+						  'usePGP', 'pgpType', 'PGPkey', 'PGPdigestAlgo'];
 	$self->{legal}{maildir}=['maildir','deliverTo', 'deliverToFolder', 'fetchable'];
 	$self->{legal}{exec}=['deliver'];
 
@@ -732,16 +733,20 @@ sub createEmailSimple{
 		$mail->header_set('CC'=>$to);
 	}
 
+	my $shost=hostname;
+	$shost=~s/\..*//g;
+	$mail->header_set('Message-ID'=>'<'.rand().'.'.time().'.ZConf::Mail'.'@'.$shost.'>');
+
 	$mail->header_set('Subject'=>$args{subject});
 
-	$mail->header_set('From'=>$Aargs{from});
+	$mail->header_set('From'=>$Aargs{name}.' <'.$Aargs{from}.'>');
 
 	return $mail;
 }
 
-=head2 createMimeEntity
+=head2 createMimeLite
 
-This create a new MIME::Entity object.
+This create a new MIME::Lite object.
 
 =head3 function args
 
@@ -775,9 +780,13 @@ The body of the message.
 
 An array of files to attach.
 
+=head4 in-reply-to
+
+This will set the in-reply-to header value.
+
 =cut
 
-sub createMimeEntity{
+sub createMimeLite{
 	my $self=$_[0];
 	my %args;
 	if(defined($_[1])){
@@ -788,7 +797,7 @@ sub createMimeEntity{
 
 	#makes sure the args for the account, subject, and body are defined
 	if (!defined($args{account}) || (!defined($args{subject}) || !defined($args{body}))) {
-		warn('ZConf-Mail createEmailMime:5: A required hash arguement was not defined' );
+		warn('ZConf-Mail createMimeLite:5: A required hash arguement was not defined' );
 		$self->{error}='5';
 		$self->{errorString}='A required hash arguement was not defined.';
 		return undef;
@@ -808,29 +817,90 @@ sub createMimeEntity{
 		return undef;
 	}
 
-	my $email = Email::Abstract->new('');
+	my $signed;
+	if ($Aargs{usePGP}) {
+		my $to='';
+		$signed=$self->sign($args{account}, $args{body}, $to);
+		if ($self->{error}) {
+			warn('ZConf-Mail createMimeLite: Signing required and sign failed');
+			return undef;
+		}
+
+		if ($Aargs{pgpType} eq 'clearsign') {
+			$args{body}=$signed;
+		}
+		
+		if ($Aargs{pgpType} eq 'signencrypt') {
+			$args{body}='';
+		}
+	}
+
+	my $email=undef;
+
+	if ($Aargs{usePGP}) {
+		if ($Aargs{pgpType} eq 'clearsign') {
+			$email=MIME::Lite->new(Type=>'multipart/signed');
+			$email->attach('Content-Type'=>'text/plain', Data=>$signed);
+		}
+
+		if ($Aargs{pgpType} eq 'mimesign') {
+			$email=MIME::Lite->new(Type=>'multipart/signed');
+
+			$email->attr('content-type.protocol'=>'application/pgp-signature');
+
+			my $hash='SHA512';
+			if (defined($Aargs{PGPdigestAlgo})) {
+				$hash=$Aargs{PGPdigestAlgo};
+			}
+
+			$email->attr('content-type.micalg'=>'PGP-'.$hash);
+
+			$email->attach('Content-Type'=>'text/plain',
+						   Encoding=>'quoted-printable',
+						   Data=>$args{body});
+
+			$email->attach(Type=>'application/pgp-signature',
+						   Filename=>'signature.asc', Disposition=>'attachment',
+						   Encoding=>'7bit',Data=>$signed);
+		}
+
+		if ($Aargs{pgpType} eq 'signencrypt') {
+			$email=MIME::Lite->new(Type=>'multipart/signed');
+
+			$email->attr('content-type'=>'multipart/encrypted');
+			$email->attr('content-type.protocol'=>'application/pgp-encrypted');
+			$email->attach('Content-Type'=>'application/pgp-encrypted',
+						ata=>"Version: 1.0\n");
+			$email->attach('Content-Type'=>'application/octet-stream',
+						   Data=>$signed);
+		}
+	}else {
+		$email=MIME::Lite->new(Data=>$args{body});
+	}
 
 	#process the to stuff
 	if (defined($args{to})){
 		my $to=join(', ', @{$args{to}});
-		$email->set_header('To'=>$to);
+		$email->add('To'=>$to);
 	}
 
 	#process the cc stuff
 	if (defined($args{cc}[0])){
 		my $to=join(', ', @{$args{cc}});
-		$email->set_header('CC'=>$to);
+		$email->add('CC'=>$to);
 	}
 
-	$email->set_header('Subject'=>$args{subject});
+	if (defined($args{'in-reply-to'})) {
+		$email->add('In-Reply-To'=>$args{'in-reply-to'});
+	}
 
-	$email->set_header('From'=>$Aargs{from});
+	$email->add('Subject'=>$args{subject});
 
-	$email->set_header('Date'=>format_date);
+	$email->add('From'=>$Aargs{from});
 
-	$email->set_body($args{body});
-
-	my $me=$email->cast("MIME::Entity");
+	my $shost=hostname;
+	$shost=~s/\..*//g;
+	$email->add('Message-ID'=>'<'.rand().'.'.time().'.ZConf::Mail'.'@'.$shost.'>');
 
 	#attach all the files
 	my $int=0;
@@ -844,12 +914,12 @@ sub createMimeEntity{
 
 		my $mimetype=mimetype($args{files}[$int]);
 
-		$me->attach(Type=>$mimetype, Path=>$args{files}[0]);
+		$email->attach(Type=>$mimetype, Path=>$args{files}[$int]);
 
 		$int++;
 	}
 
-	return $me;
+	return $email;
 }
 
 =head2 delAccount
@@ -2134,6 +2204,177 @@ sub sendable{
 	return 1;
 }
 
+=head2 sign
+
+This signs the body.
+
+There are three required arguements. The first is the
+account name it will be sending from. The second the
+body of the email. The third is the to address.
+
+=cut
+
+sub sign{
+	my $self=$_[0];
+	my $account=$_[1];
+	my $body=$_[2];
+	my $to=$_[3];
+
+	#makes sure the account exists
+	if (!$self->accountExists($account)) {
+		warn('Zconf-Mail delAccount:6: "'.$account.'" does not exist');
+		$self->{error}=6;
+		$self->{errorString}='"'.$account.'" does not exist';
+		return undef;
+	}
+
+	#error if we don't have a body
+	if (!defined($body)) {
+		warn('ZConf-Mail sign:5: No body is defined');
+		$self->{error}=5;
+		$self->{errorString}='No body is defined';
+		return undef;
+	}
+
+	#get the args for the account
+	my %Aargs=$self->getAccountArgs($account);
+	if ($self->{error}) {
+		warn('ZConf-Mail createEmailSimpe: getAccountArgs errors');
+		return undef;
+	}
+
+	if ($Aargs{pgpType} eq 'mimesign') {
+		$body="Content-Disposition: inline\n".
+		"Content-Transfer-Encoding: quoted-printable\n".
+		"Content-Type: text/plain\n\n".encode_qp($body);
+	}
+
+	my $hash='SHA512';
+	if (defined($Aargs{PGPdigestAlgo})) {
+		$hash=$Aargs{PGPdigestAlgo};
+	}
+
+	#make sure the sign type is specified
+	if (!defined($Aargs{pgpType})) {
+		warn('ZConf-Mail sign:41: "pgpType" account arg is not defined');
+		$self->{error}=41;
+		$self->{errorString}='"pgpType" account arg is not defined';
+		return undef;
+	}
+
+	#make sure a key is specified
+	if (!defined($Aargs{PGPkey})) {
+		warn('ZConf-Mail sign:41: "PGPkey" account arg is not defined');
+		$self->{error}=41;
+		$self->{errorString}='"PGPkey" account arg is not defined';
+		return undef;
+	}
+
+	#make sure the sign type is supported
+	my @types=('clearsign', 'mimesign', 'signencrypt');
+	my $int=0;
+	my $matched=0;
+	while($types[$int]){
+		if ($types[$int] eq $Aargs{pgpType}) {
+			$matched=1;
+		}
+
+		$int++;
+	}
+	if (!$matched) {
+		warn('ZConf-Mail sign:43: The type, "'.$Aargs{pgpType}.'", is not a valid type');
+		$self->{error}=43;
+		$self->{errorString}='The type, "'.$Aargs{pgpType}.'", is not a valid type';
+		return undef;
+	}
+
+	#creates the body directory
+	my $bodydir='/tmp/'.time().rand();
+	if (!mkdir($bodydir)) {
+		warn('ZConf-Mail sign:39: Faied to create the temporary directory,"'.
+			 $bodydir.'", for signing');
+		$self->{error}=39;
+		$self->{errorString}='Faied to create the temporary directory,"'.
+		                     $bodydir.'", for signing.';
+		return undef;
+	}
+	my $bodyfile=$bodydir.'/body';
+
+	#if we are doing mimesigning, we need to 
+	if ($Aargs{pgpType} eq 'mimesign') {
+		$body=~s/\n/\r\n/g;
+	}
+
+	#open it and write to it
+	if (!open(BODYWRITE, '>'.$bodyfile)) {
+		rmdir($bodydir);
+		warn('ZConf-Mail sign:40: Failed to write body to "'.$bodyfile.
+			 '", for signing');
+		$self->{error}=40;
+		$self->{errorString}='Failed to write body to "'.$bodyfile.
+		                     '", for signing';
+		return undef;
+	}
+	print BODYWRITE $body;
+
+	#this is the file that will be read into $sign
+	my $read=undef;
+
+	#this is what will be returned
+	my $sign=undef;
+
+	#handles clear signing
+	my $execstring='gpg -u '.$Aargs{PGPkey}.' --digest-algo '.$hash.' ';
+	if ($Aargs{pgpType} eq 'clearsign') {
+		$execstring=$execstring.' --clearsign '.$bodyfile;
+		system($execstring);
+		if ($? ne '0') {
+			warn('ZConf-Mail sign:44: Signing failed. Command="'.$execstring.'"');
+			$sign->{error}=44;
+			$sign->{errorString}='Signing failed. Command="'.$execstring.'"';
+			return undef;
+		}
+		$read=$bodyfile.'.asc';
+	}
+
+	#handles mime signing
+	if ($Aargs{pgpType} eq 'mimesign') {
+		$execstring=$execstring.' -a --detach-sign '.$bodyfile;
+		system($execstring);
+		if ($? ne '0') {
+			warn('ZConf-Mail sign:44: Signing failed. Command="'.$execstring.'"');
+			$sign->{error}=44;
+			$sign->{errorString}='Signing failed. Command="'.$execstring.'"';
+			return undef;
+		}
+		$read=$bodyfile.'.asc';
+	}
+
+	#handles sign and encrypt
+	if ($Aargs{pgpType} eq 'signencrypt') {
+		$execstring=$execstring.' -se -r '..' '.$bodyfile;
+		system($execstring);
+		if ($? ne '0') {
+			warn('ZConf-Mail sign:44: Signing failed. Command="'.$execstring.'"');
+			$sign->{error}=44;
+			$sign->{errorString}='Signing failed. Command="'.$execstring.'"';
+			return undef;
+		}
+		$read=$bodyfile.'.gpg';
+	}
+
+	open(SIGNREAD, '<'.$read);
+	$sign=join("", <SIGNREAD>);
+	close(SIGNREAD);
+
+	unlink($bodyfile);
+	unlink($read);
+	rmdir($bodydir);
+
+	return $sign;
+}
+
+
 =head2 errorBlank
 
 This blanks the error storage and is only meant for internal usage.
@@ -2322,6 +2563,34 @@ This is the folder to save it to for the account.
 =head3 accounts/smtp/*/timeout
 
 The time out for connecting to the server.
+
+=head3 accounts/smtp/*/usePGP
+
+If PGP should be used or not for this account. This is a Perl boolean value.
+
+=head3 accounts/smtp/*/pgpType
+
+=head4 clearsign
+
+Clear sign the message.
+
+=head4 mimesign
+
+Attach the signature as a attachment.
+
+=head4 signencrypt
+
+Sign and encrypt the message. Not yet implemented.
+
+=head3 accounts/smtp/*/PGPkey
+
+The PGP key to use.
+
+=head3 accounts/smtp/*/PGPdigestAlgo
+
+The digest algorithym to use. It will default to 'SHA512' if not specified.
+
+To find what out what your version supports, run 'gpg --version'.
 
 =head2 EXEC
 
@@ -2521,6 +2790,30 @@ undefined or set to ''.
 =head2 38
 
 File does not exist.
+
+=head2 39
+
+Failed to create temporary directory for signing.
+
+=head2 40
+
+Failed to create temprorary body file for signing.
+
+=head2 41
+
+No pgpType is not specified.
+
+=head2 42
+
+PGPGkey is not specified.
+
+=head2 43
+
+Sign type is not valid.
+
+=head2 44
+
+Signing failed.
 
 =head1 AUTHOR
 

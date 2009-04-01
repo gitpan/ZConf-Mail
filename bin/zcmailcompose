@@ -40,6 +40,7 @@ sub main::HELP_MESSAGE {
 		      "-t <addresses>  The to addresses.\n".
 			  "-c <addresses>  The CC addresses.\n".
 			  "-f <file>  File to attach.\n".
+			  "-r <<In-Reply-To value>>  This is the value to value of the In-ReplyTo header to.\n".
 			  "-b <addresses>  The BCC addresses.\n\n".
               "Atleast 1 to address is required.\n\n".
               "Examples:\n".
@@ -61,7 +62,7 @@ exit 0;
 
 #gets the options
 my %opts=();
-getopts('a:t:c:b:f:', \%opts);
+getopts('a:t:c:b:f:r:', \%opts);
 my %args;
 
 #makes sure that -a is defined
@@ -146,15 +147,16 @@ my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
 													  #gets the body
 													  my $body=$body->get();
 													  #creates the mail
-													  my $mesg=$mail->createMimeEntity({
-																					   account=>$opts{a},
-																					   to=>\@to,
-																					   cc=>\@cc,
-																					   files=>\@files,
-																					   subject=>$subject,
-																					   body=>$body
-																					   }
-																					  );
+													  my $mesg=$mail->createMimeLite({
+																					  account=>$opts{a},
+																					  to=>\@to,
+																					  cc=>\@cc,
+																					  files=>\@files,
+																					  subject=>$subject,
+																					  body=>$body,
+																					  'in-reply-to'=>$opts{r}
+																					  }
+																					 );
 													  #sends the mail
 													  $mail->send({
 																   account=>$opts{a},
@@ -162,7 +164,7 @@ my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
 																   cc=>\@cc,
 																   bcc=>\@bcc,
 																   subject=>$subject,
-																   mail=>$mesg->stringify
+																   mail=>$mesg->as_string,
 																   }
 																  );
 													  if ($self->{error}) {
