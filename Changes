@@ -1,5 +1,9 @@
 Revision history for ZConf-Mail
 
+1.0.0	2009-06-15/19:00
+		-Add ZConf::GUI support.
+		-Reimplement 'bin/zcmailcompose' and 'bin/zcmailaccountmanage' under 'ZConf::Mail::GUI'.
+
 0.3.1	2009-04-01/8:30
 		-Fix mime-signing.
 

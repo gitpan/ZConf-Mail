@@ -1,4 +1,1 @@
--IMAP, maildir, and mbox deliver support
--SMTP message saving after sending it
--Account management tools.
--PODs for the binaries.
+-maildir and mbox deliver support

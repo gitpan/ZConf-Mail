@@ -23,11 +23,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 0.3.1
+Version 1.0.0
 
 =cut
 
-our $VERSION = '0.3.1';
+our $VERSION = '1.0.0';
 
 
 =head1 SYNOPSIS
@@ -37,7 +37,7 @@ our $VERSION = '0.3.1';
     my $zcmail = ZConf::Mail->new();
     ...
 
-=head1 FUNCTIONS
+=head1 METHODES
 
 Any time you see account name or account, referenced outside of 'createAccount',
 it means that it should also include the type as well. So for a POP3 account named
