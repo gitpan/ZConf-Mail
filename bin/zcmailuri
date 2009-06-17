@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#Copyright (c) 2008, Zane C. Bowers
+#Copyright (c) 2009, Zane C. Bowers
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -24,66 +24,85 @@
 
 use warnings;
 use strict;
-use ZConf::Mail;
+use ZConf::Mail::GUI;
 use Getopt::Std;
 
 $Getopt::Std::STANDARD_HELP_VERSION=1;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcgetmail 0.0.0\n";
+        print "zcmailuri 0.0.0\n";
 };
 
 #print help
 sub main::HELP_MESSAGE {
         print "\n".
-		      "-a account\n";
+		      "-a <account>  The account to use for sending.\n".
+		      "-u <URI>  The mailto URI.\n".
+			  "-s <set>  The ZConf set to use.\n";
 		exit 1;
 };
 
+#initiates ZConf::Mail
+my $zcm=ZConf::Mail->new();
+if ($zcm->{error}) {
+	warn('zcmailaccountmanage: Initializing ZConf::Mail failed');
+	exit $zcm->{error};
+}
+
 #gets the options
 my %opts=();
-getopts('a:', \%opts);
+getopts('a:u:s:', \%opts);
 my %args;
 
-#initializes it
-my $mail=ZConf::Mail->new;
+#makes sure that -t is defined
+if (!defined($opts{u})) {
+	warn('zcmailcompose: No URI specified.');
+	exit 1;
+}
 
-#fetches it
-my $fetched=$mail->fetch($opts{a});
-if ($mail->{error}) {
-	my $account='undef';
-	if (defined($opts{a})) {
-		$account='"'.$opts{a}.'"';
+#makes sure the defined account is a smtp account
+if (!$opts{a} =~ /^smtp\//) {
+	warn('zcmailcompose: Not a sendable account.');
+	exit 1;
+}
+
+#read a set if needed
+if (defined($opts{s})) {
+	$zcm->readSet($opts{s});
+	if ($zcm->{error}) {
+			warn('zcmailaccountmanage: Error reading the set "'.$opts{s}.'"');
+			exit $zcm->{error};		
 	}
-	warn('zcgetmail: $mail->fetch('.$account.') failed. $mail->{error}="'.
-		 $mail->{error}.'" $mail->{errorString}="'.$mail->{errorString}.'"');
-	exit $mail->{error};
-}else {
-	print "fetched '".$fetched."' for the account '".$opts{a}."'\n";
 }
 
-if ($mail->{error}) {
-	exit $mail->{error};
-}
+#
+my %hash;
+$hash{uri}=$opts{u};
+$hash{account}=$opts{a};
 
-exit 0;
+my $zcmg=ZConf::Mail::GUI->new({zcmail=>$zcm});
+
+$zcmg->composeFromURI(\%hash);
 
 
 =head1 NAME
 
-zcgetmail - Fetches mail for a ZConf::Mail account.
+zcmailuri - Invoke compose via a URI.
 
 =head1 SYNOPSIS
 
-zcgetmail [B<-a> <account>]
+zcgetmail B<-a> <account> B<-u> <URI>
 
 =head1 SWITCHES
 
 =head2 B<-a> <account>
 
-The account to fetch the mail for. If this is not specified,
-then the default one is used.
+The account to send the mail using.
+
+=head2 B<-u> <URI>
+
+The URI to use.
 
 =head1 AUTHOR
 
@@ -104,7 +123,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
-xFOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
 DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS` OR
 SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
@@ -122,6 +141,6 @@ any
 
 =head1 README
 
-zcgetmail - Fetches mail for a ZConf::Mail account.
+zcmailuri - Invoke compose via a URI.
 
 =cut

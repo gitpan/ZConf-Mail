@@ -788,12 +788,14 @@ $self{cui}->mainloop;
 
 =head1 NAME
 
-zcmailaccountmanage - A Curses::UI interface to ZConf::Mail accounts.
+curses-zcmailaccountmanage - A Curses::UI interface to ZConf::Mail accounts.
 
 =head1 SYNOPSIS
 
 No options or etc are taken at this time. Please see the perldoc for
 'ZConf::Mail' for more information.
+
+This is the curses backend and is generally not meant to be called directly.
 
 =head1 AUTHOR
 
@@ -832,6 +834,6 @@ any
 
 =head1 README
 
-zcmailaccountmanage - A Curses::UI interface to ZConf::Mail accounts.
+curses-zcmailaccountmanage - A Curses::UI interface to ZConf::Mail accounts.
 
 =cut

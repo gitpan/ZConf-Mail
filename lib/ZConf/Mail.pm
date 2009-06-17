@@ -23,11 +23,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 1.0.1
+Version 1.1.0
 
 =cut
 
-our $VERSION = '1.0.1';
+our $VERSION = '1.1.0';
 
 
 =head1 SYNOPSIS
@@ -661,7 +661,8 @@ Creates a new Email::Simple object.
 
 =head4 account
 
-This is the account is being setup for.
+This is the account is being setup for. If this is not
+specified, the default one is used.
 
 =head4 to
 
@@ -689,6 +690,10 @@ sub createEmailSimple{
 	}
 
 	$self->errorBlank;
+
+	if (!defined($args{account})) {
+		$args{account}=$self->defaultSendableGet;
+	}
 
 	#makes sure the args for the account, subject, and body are defined
 	if (!defined($args{account}) || (!defined($args{subject}) || !defined($args{body}))) {
@@ -758,7 +763,8 @@ The three following are required.
 
 =head4 account
 
-This is the account is being setup for.
+This is the account is being setup for. If no account
+is specified, the default on is used.
 
 =head4 to
 
@@ -794,6 +800,10 @@ sub createMimeLite{
 	}
 
 	$self->errorBlank;
+
+	if (!defined($args{account})) {
+		$args{account}=$self->defaultSendableGet;
+	}
 
 	#makes sure the args for the account, subject, and body are defined
 	if (!defined($args{account}) || (!defined($args{subject}) || !defined($args{body}))) {
@@ -920,6 +930,174 @@ sub createMimeLite{
 	}
 
 	return $email;
+}
+
+=head2 defaultFetchableGet
+
+This sets the default sendable email address.
+
+    my $defaultFetchable=$zcmail->defaultFetchableGet;
+    if(!defined($defaultFetchable)){
+        print "There is no default sendable account.\n";
+    }
+    
+    print $defaultFetchable."\n";
+
+=cut
+
+sub defaultFetchableGet{
+	my $self=$_[0];
+	$self->errorBlank;
+
+	my %var=$self->{zconf}->regexVarGet('mail', '^default/fetchable$');
+
+	if (!defined($var{'default/fetchable'})) {
+		return undef;
+	}
+
+	if ($var{'default/fetchable'} eq '') {
+		return undef;
+	}
+
+	return $var{'default/fetchable'};
+}
+
+=head2 defaultFetchableSet
+
+This sets the default fetchable account.
+
+    $zcmail->defaultFechableSet('smtp/foo');
+    if($zcmail->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub defaultFetchableSet{
+	my $self=$_[0];
+	my $account=$_[1];
+
+	$self->errorBlank;
+
+	#make sure we have a account
+	if (!defined($account)) {
+		$self->{errorString}='No account specified.';
+		$self->{error}='5';
+		warn('ZConf-Mail defaultFetchableSet:5: '.$self->{errorString});
+		return undef;
+	}
+	
+	my $fetchable=$self->fetchable($account);
+	if ($self->{error}) {
+		warn('ZConf-Mail defaultFetchableSet: fetchable errored');
+		return undef;
+	}
+
+	if (!$fetchable) {
+		$self->{error}=24;
+		$self->{errorString}='The account, "'.$account.'", is not sendable.';
+		warn('ZConf-Mail defaultFetchableSet:24: '.$self->{errorString});
+		return undef;
+	}
+
+	#sets the value
+	#not doing any error checking as there is no reason to believe it will fail
+	$self->{zconf}->setVar('mail', 'default/fetchable', $account);
+
+	#saves it
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
+	if ($self->{zconf}->{error}) {
+		$self->{errorString}='ZConf failed to write the set out.';
+		$self->{error}=36;
+		warn('ZConf-Mail defaultFetchableSet:36: '.$self->{errorString});
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 defaultSendableGet
+
+This sets the default sendable email account.
+
+    my $defaultSendable=$zcmail->defaultSendableGet;
+    if(!defined($defaultSendable)){
+        print "There is no default sendable account.\n";
+    }
+    
+    print $defaultSendable."\n";
+
+=cut
+
+sub defaultSendableGet{
+	my $self=$_[0];
+	$self->errorBlank;
+
+	my %var=$self->{zconf}->regexVarGet('mail', '^default/sendable$');
+
+	if (!defined($var{'default/sendable'})) {
+		return undef;
+	}
+
+	if ($var{'default/sendable'} eq '') {
+		return undef;
+	}
+
+	return $var{'default/sendable'};
+}
+
+=head2 defaultSendableSet
+
+This sets the default sendable email address.
+
+    $zcmail->defaultSendableSet('smtp/foo');
+    if($zcmail->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub defaultSendableSet{
+	my $self=$_[0];
+	my $account=$_[1];
+
+	$self->errorBlank;
+
+	#make sure we have a account
+	if (!defined($account)) {
+		$self->{errorString}='Account not specified.';
+		$self->{error}='5';
+		warn('ZConf-Mail defaultSendableSet:5: '.$self->{errorString});
+		return undef;
+	}
+	
+	my $sendable=$self->sendable($account);
+	if ($self->{error}) {
+		warn('ZConf-Mail defaultSendableSet: sendable errored');
+		return undef;
+	}
+
+	if (!$sendable) {
+		$self->{error}=24;
+		$self->{errorString}='The account, "'.$account.'", is not sendable.';
+		warn('ZConf-Mail defaultSendableSet:24: '.$self->{errorString});
+		return undef;
+	}
+
+	#sets the value
+	#not doing any error checking as there is no reason to believe it will fail
+	$self->{zconf}->setVar('mail', 'default/sendable', $account);
+
+	#saves it
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
+	if ($self->{zconf}->{error}) {
+		$self->{errorString}='ZConf failed to write the set out.';
+		$self->{error}=36;
+		warn('ZConf-Mail defaultSendableSet:36: '.$self->{errorString});
+		return undef;
+	}
+
+	return 1;
 }
 
 =head2 delAccount
@@ -1248,7 +1426,7 @@ sub deliverIMAP{
 =head2 fetch
 
 This is a wrapper function for the other accounts. The only accepted arg
-is account name.
+is account name. If no account is specified, the default one is used.
 
 It is then delivered to the account specified by variable 'deliverTo' for
 the account.
@@ -1266,6 +1444,20 @@ sub fetch{
 	my $account=$_[1];
 
 	$self->errorBlank;
+
+	#gets the default fetchable account if no account is given
+	if (!defined($account)) {
+		$account=$self->defaultFetchableGet;
+	}
+
+	#if we get to this point it means the account does has not
+	#been specified and no default account exists
+	if (!defined($account)) {
+		$self->{error}=5;
+		$self->{errorString}='No account specified and there is no default fetchable account.';
+		warn('ZConf-Mail fetch:5: '.$self->{errorString});
+		return undef;
+	}
 
 	if (!$self->fetchable($account)) {
 		warn('ZConf-Mail fetch:15: "'.$account.'" is not fetchable');
@@ -1992,7 +2184,8 @@ This sends a email. One arguement is accepted and that is a hash.
 
 =head4 account
 
-This is the account it is sending for.
+This is the account it is sending for. If this is not specified,
+the default sendable account is used.
 
 =head4 to
 
@@ -2024,6 +2217,10 @@ sub send{
 	}
 
 	$self->errorBlank;
+
+	if (!defined($args{account})) {
+		$args{account}=$self->defaultSendableGet;
+	}
 
 	#makes sure we have mail
 	if (!defined($args{mail})) {
@@ -2594,7 +2791,7 @@ To find what out what your version supports, run 'gpg --version'.
 
 =head2 EXEC
 
-=head2 deliver
+=head3 deliver
 
 This is the command to execute for delivering a mail message. A single message
 will be delivered at a time by running the specified program and piping the message
@@ -2602,6 +2799,18 @@ into it. Only a single message is delivered at once.
 
 A example would be setting this to '/usr/local/libexec/dovecot/deliver' to deliver a
 message one's dovecot account.
+
+=head2 MISC
+
+=head3 default/sendable
+
+This is the default sendable account. If this key does not exist or set to '',
+there is no default sendable account.
+
+=head3 default/fetchable
+
+This is the default fetchable account. If this key does not exist or set to '',
+there is no default fetchable account.
 
 =head2 INTERNAL VARIABLES
 

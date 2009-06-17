@@ -1,5 +1,15 @@
 Revision history for ZConf-Mail
 
+1.1.0	2009-06-17/11:50
+		-Correct ZConf::Mail::GUI->compose documentation as the info
+			on the account args hash was missing.
+		-Add 'composeFromURI' to 'ZConf::Mail::GUI'.
+		-Add 'bin/zcmailuri'.
+		-Correct some POD naming stuff for 'bin/zcmailcompose' and
+			'bin/curses-zcmailcompose'.
+		-Update manifest.
+		-Default sendable and fetchable stuff implemented.
+
 1.0.1	2009-06-17/00:00
 		-Fix error when the compose script fails.
 		-Fix the pod for ZConf::Mail::GUI.
@@ -8,7 +18,8 @@ Revision history for ZConf-Mail
 
 1.0.0	2009-06-15/19:00
 		-Add ZConf::GUI support.
-		-Reimplement 'bin/zcmailcompose' and 'bin/zcmailaccountmanage' under 'ZConf::Mail::GUI'.
+		-Reimplement 'bin/zcmailcompose' and 'bin/zcmailaccountmanage'
+			under 'ZConf::Mail::GUI'.
 
 0.3.1	2009-04-01/8:30
 		-Fix mime-signing.

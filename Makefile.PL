@@ -26,6 +26,7 @@ WriteMakefile(
 				  'Email::Date'=>0,
 				  'MIME::Lite'=>0,
 				  'String::ShellQuote'=>0,
+				  'URI'=>0,
 				  },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'ZConf-Mail-*' },

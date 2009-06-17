@@ -182,7 +182,7 @@ $cui->mainloop;
 
 =head1 NAME
 
-zcmailcompose - Compose and send a simple email using ZConf::Mail.
+curses-zcmailcompose - Compose and send a simple email using ZConf::Mail.
 
 =head1 SYNOPSIS
 
@@ -243,6 +243,6 @@ any
 
 =head1 README
 
-zcmailcompose - Compose and send a simple email using ZConf::Mail.
+curses-zcmailcompose - Compose and send a simple email using ZConf::Mail.
 
 =cut

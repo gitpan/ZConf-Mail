@@ -5,18 +5,19 @@ use strict;
 use ZConf::Mail;
 use Getopt::Std;
 use ZConf::GUI;
+use URI;
 
 =head1 NAME
 
-ZConf::Mail::GUI - Misc mail client functions backed by ZConf.
+ZConf::Mail::GUI - Implement various GUI functions for ZConf::Mail.
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 
 =head1 SYNOPSIS
@@ -118,43 +119,16 @@ sub new{
 	return $self;
 }
 
-=head2 manageAccounts
-
-This manages the accounts.
-
-    $zcmg->manageAccounts;
-    if($self->{error}){
-        print "Error!\n";
-    }
-
-=cut
-
-sub manageAccounts{
-	my $self=$_[0];
-	my %args;
-	if(defined($_[1])){
-		%args= %{$_[1]};
-	}
-
-	$self->errorblank;
-
-	$self->{be}->manageAccounts(\%args);
-	if($self->{be}->{error}){
-		$self->{error}=3;
-		$self->{errorString}='Backend errored. error="'.$self->{be}->error.'" '.
-		                     'errorString="'.$self->{be}->{errorString}.'"';
-		warn('ZConf-Mail-GUI manageAccounts:3: '.$self->{errorString});
-		return undef;
-	}
-
-	return 1;
-}
-
 =head2 compose
 
 This opens a window for composing a message.
 
 =head3 args hash
+
+=head4 account
+
+This is the account to use. If this is not defined, the default
+sendable account is used.
 
 =head4 to
 
@@ -192,11 +166,15 @@ sub compose{
 
 	$self->errorblank;
 
+	if (!defined($args{account})) {
+		$args{account}=$self->{zcm}->defaultSendableGet;
+	}
+
 	#make sure a account is specified
 	if (!defined($args{account})) {
-		warn('ZConf-Mail-GUI compose:4: No account specified' );
 		$self->{error}='4';
-		$self->{errorString}='No account specified.';
+		$self->{errorString}='No account specified or there is no default sendable';
+		warn('ZConf-Mail-GUI compose:4: '.$self->{errorString} );
 		return undef;
 	}
 
@@ -214,6 +192,114 @@ sub compose{
 		$self->{errorString}='Backend errored. error="'.$self->{be}->{error}.'" '.
 		                     'errorString="'.$self->{be}->{errorString}.'"';
 		warn('ZConf-Mail-GUI compose:3: '.$self->{errorString});
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 composeFromURI
+
+This composes a new message from a URI.
+
+=head3 args hash
+
+=head4 account
+
+This is the account to use.
+
+=head4 uri
+
+This is the URI to use.
+
+    $zcmg->composeFromURI({account=>'smtp/whatever', uri=>'mailto:foo@bar'});
+    if($zcmg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub composeFromURI{
+	my $self=$_[0];
+	my %args;
+	if(defined($_[1])){
+		%args= %{$_[1]};
+	}
+
+	$self->errorblank;
+
+	if (!defined($args{account})) {
+		$args{account}=$self->{zcm}->defaultSendableGet;
+	}
+
+	#make sure a account is specified
+	if (!defined($args{account})) {
+		$self->{error}='4';
+		$self->{errorString}='No account specified or there is no default sendable';
+		warn('ZConf-Mail-GUI composeFromURI:4: '.$self->{errorString} );
+		return undef;
+	}
+
+	#make sure a URI is specified.
+	if (!defined($args{uri})) {
+		warn('ZConf-Mail-GUI composFromURIe:4: No URI specified' );
+		$self->{error}=4;
+		$self->{errorString}='No URI specified.';
+		return undef;
+	}
+
+	if (!($args{uri}=~/[Mm][Aa][Ii][Ll][Tt][Oo]\:/)) {
+		$self->{errorString}='Does not appear to be a ';
+		$self->{error}=5;
+		warn('ZConf-Mail-GUI composeFromURI:4: '.$self->{errorString});
+		return undef;		
+	}
+
+	my $uri=URI->new($args{uri});
+
+	my $to=$uri->to;
+
+	if (!defined($to) || ($to eq '')) {
+		$self->{errorString}='No to address could be found in the URI';
+		$self->{error}=6;
+		warn('ZConf-Mail-GUI composeFromURI:6: '.$self->{errorString});
+		return undef;
+	}
+
+	$self->compose({account=>$args{account}, to=>[$to]});
+	if ($self->{error}) {
+		warn('ZConf-Mail-GUI compmoseFromURI: compose fialed');
+	}
+
+	return 1;
+}
+
+=head2 manageAccounts
+
+This manages the accounts.
+
+    $zcmg->manageAccounts;
+    if($self->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub manageAccounts{
+	my $self=$_[0];
+	my %args;
+	if(defined($_[1])){
+		%args= %{$_[1]};
+	}
+
+	$self->errorblank;
+
+	$self->{be}->manageAccounts(\%args);
+	if($self->{be}->{error}){
+		$self->{error}=3;
+		$self->{errorString}='Backend errored. error="'.$self->{be}->error.'" '.
+		                     'errorString="'.$self->{be}->{errorString}.'"';
+		warn('ZConf-Mail-GUI manageAccounts:3: '.$self->{errorString});
 		return undef;
 	}
 
@@ -288,6 +374,14 @@ Backend error.
 =head2 4
 
 Missing arguement.
+
+=head2 5
+
+The URI is not a mailto URI.
+
+=head2 6
+
+The URI appears to not contain any to address.
 
 =head1 AUTHOR
 

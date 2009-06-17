@@ -7,9 +7,12 @@ lib/ZConf/Mail.pm
 lib/ZConf/Mail/GUI.pm
 lib/ZConf/Mail/GUI/Curses.pm
 t/00-load.t
+t/01-load.t
+t/02-load.t
 t/pod.t
 bin/zcgetmail
 bin/zcmailcompose
 bin/zcmailacountmanage
 bin/curses-zcmailcompose
 bin/curses-zcmailacountmanage
+bin/zcmailuri
