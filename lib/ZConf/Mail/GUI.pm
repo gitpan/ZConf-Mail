@@ -8,22 +8,22 @@ use ZConf::GUI;
 
 =head1 NAME
 
-ZConf::Mail - Misc mail client functions backed by ZConf.
+ZConf::Mail::GUI - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 0.0.0
+Version 0.0.1
 
 =cut
 
-our $VERSION = '0.0.0';
+our $VERSION = '0.0.1';
 
 
 =head1 SYNOPSIS
 
-    use ZConf::Mail;
+    use ZConf::Mail::GUI;
 
-    my $zcmg = ZConf::Mail->new();
+    my $zcmg = ZConf::Mail::GUI->new();
     ...
 
 =head1 METHODES
@@ -211,7 +211,7 @@ sub compose{
 	$self->{be}->compose(\%args);
 	if($self->{be}->{error}){
 		$self->{error}=3;
-		$self->{errorString}='Backend errored. error="'.$self->{be}->error.'" '.
+		$self->{errorString}='Backend errored. error="'.$self->{be}->{error}.'" '.
 		                     'errorString="'.$self->{be}->{errorString}.'"';
 		warn('ZConf-Mail-GUI compose:3: '.$self->{errorString});
 		return undef;

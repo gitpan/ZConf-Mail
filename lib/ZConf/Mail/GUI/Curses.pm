@@ -12,11 +12,11 @@ ZConf::Mail::GUI::Curses - The Curses backend for ZConf::Mail::GUI.
 
 =head1 VERSION
 
-Version 0.0.0
+Version 0.0.1
 
 =cut
 
-our $VERSION = '0.0.0';
+our $VERSION = '0.0.1';
 
 =head1 SYNOPSIS
 
@@ -96,7 +96,8 @@ sub new{
 		$self->{useX}=$args{useX};
 	}else {
 		use ZConf::GUI;
-		$self->{useX}=ZConf::GUI->new({zconf=>$self->{zconf}});
+		$self->{zcgui}=ZConf::GUI->new({zconf=>$self->{zconf}});
+		$self->{useX}=$self->{zcgui}->useX('ZConf::Mail');
 	}
 
 	$self->{terminal}='xterm -rv -e ';
