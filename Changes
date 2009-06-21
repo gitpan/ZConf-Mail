@@ -1,5 +1,10 @@
 Revision history for ZConf-Mail
 
+1.2.0	2009-06-21/14:00
+		-Updated look for 'bin/curses-zcmailcompose'.
+		-Compose no longer requires either a to or cc address for compose.
+		-Document the hot keys for 'ZConf::Mail::GUI::Curses'.
+
 1.1.0	2009-06-17/11:50
 		-Correct ZConf::Mail::GUI->compose documentation as the info
 			on the account args hash was missing.

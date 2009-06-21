@@ -12,11 +12,11 @@ ZConf::Mail::GUI::Curses - The Curses backend for ZConf::Mail::GUI.
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
@@ -169,19 +169,15 @@ sub compose{
 
 	$self->errorblank;
 
+	if (!defined($args{account})) {
+		$args{account}=$self->{zcmail}->defaultSendableGet;
+	}
+
 	#make sure a account is specified
 	if (!defined($args{account})) {
 		warn('ZConf-Mail-GUI compose:4: No account specified' );
 		$self->{error}='4';
 		$self->{errorString}='No account specified.';
-		return undef;
-	}
-
-	#makes sure that either to or cc is given
-	if (!defined($args{cc}[0]) && !defined($args{to}[0])) {
-		warn('ZConf-Mail createEmailMime:2: Neither to or cc given' );
-		$self->{error}=2;
-		$self->{errorString}='Neither to or cc given.';
 		return undef;
 	}
 
@@ -306,6 +302,36 @@ At this time, no windows are supported.
 manageAccounts
 
 compose
+
+=head1 HOTKEYS
+
+Please see Curses::UI::TextEditor for the support hot keys.
+
+Additional ones are listed below.
+
+=head2 CTRL+a
+
+Attach a file.
+
+=head2 CTRL+f
+
+Call the formatter.
+
+=head2 CTRL+l
+
+Send.
+
+=head2 CTRL+n
+
+Changes to the next tab.
+
+=head2 CTRL+p
+
+Changes to the previous tab.
+
+=head2 CTRL+q
+
+Exit.
 
 =head1 ERROR CODES
 

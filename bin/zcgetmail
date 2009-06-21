@@ -31,7 +31,7 @@ $Getopt::Std::STANDARD_HELP_VERSION=1;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcgetmail 0.0.0\n";
+        print "zcgetmail 0.1.0\n";
 };
 
 #print help
@@ -52,7 +52,7 @@ my $mail=ZConf::Mail->new;
 #fetches it
 my $fetched=$mail->fetch($opts{a});
 if ($mail->{error}) {
-	my $account='undef';
+	my $account=$mail->defaultFetchableGet;
 	if (defined($opts{a})) {
 		$account='"'.$opts{a}.'"';
 	}
@@ -60,7 +60,11 @@ if ($mail->{error}) {
 		 $mail->{error}.'" $mail->{errorString}="'.$mail->{errorString}.'"');
 	exit $mail->{error};
 }else {
-	print "fetched '".$fetched."' for the account '".$opts{a}."'\n";
+	my $account=$mail->defaultFetchableGet;
+	if (defined($opts{a})) {
+		$account='"'.$opts{a}.'"';
+	}
+	print "fetched '".$fetched."' for the account '".$account."'\n";
 }
 
 if ($mail->{error}) {

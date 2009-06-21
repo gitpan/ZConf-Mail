@@ -6,7 +6,7 @@ exec, and sending email messages.
 
 SSL is supported for IMAP, POP3, and SMTP.
 
-ZConf is used for storing the messages.
+ZConf is used for storing the configuration settings.
 
 It currently makes a very useful for getmail.
 
@@ -31,6 +31,12 @@ Mail::Box::Manager
 IO::MultiPipe
 ZConf
 Curses::UI
+Email::Abstract
+File::MimeInfo::Magic
+Email::Date
+MIME::Lite
+String::ShellQuote
+URI
 
 SUPPORT AND DOCUMENTATION
 

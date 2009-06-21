@@ -178,14 +178,6 @@ sub compose{
 		return undef;
 	}
 
-	#makes sure that either to or cc is given
-	if (!defined($args{cc}[0]) && !defined($args{to}[0])) {
-		warn('ZConf-Mail createEmailMime:4: Neither to or cc given' );
-		$self->{error}=4;
-		$self->{errorString}='Neither to or cc given.';
-		return undef;
-	}
-
 	$self->{be}->compose(\%args);
 	if($self->{be}->{error}){
 		$self->{error}=3;

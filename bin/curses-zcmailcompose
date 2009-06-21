@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#Copyright (c) 2008, Zane C. Bowers
+#Copyright (c) 2009, Zane C. Bowers
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -27,10 +27,11 @@ use strict;
 use ZConf::Mail;
 use Getopt::Std;
 use Curses::UI;
+use Curses::UI::Common;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcmailcompose 0.1.0\n";
+        print "zcmailcompose 1.0.0\n";
 };
 
 #print help
@@ -64,18 +65,6 @@ exit 0;
 my %opts=();
 getopts('a:t:c:b:f:r:', \%opts);
 my %args;
-
-#makes sure that -a is defined
-if (!defined($opts{a})) {
-	warn('zcmailcompose: No account defined.');
-	exit 1;
-}
-
-#makes sure that -t is defined
-if (!defined($opts{t})) {
-	warn('zcmailcompose: No to defined.');
-	exit 1;
-}
 
 #breaks the to appart
 my @to=split(/,/, $opts{t});
@@ -119,22 +108,67 @@ my $cui = Curses::UI->new( -clear_on_exit => 1);
 #creates the window
 my $win = $cui->add('window', 'Window', {});
 
+#creates the notebook widget
+my $notebook=$win->add(undef, 'Notebook',
+					   -bindings=>{
+								   "\cA" => 'goto_first_page',
+								   "\cE" => 'goto_last_page',
+								   "\cN" => 'goto_next_page',
+								   "\cP" => 'goto_prev_page',
+								   });
+
+#adds compose pages
+my $composePage=$notebook->add_page('Message');
+my $addressPage=$notebook->add_page('Addresses');
+my $filePage=$notebook->add_page('Attachments');
+
 #creates the container
-my $container = $win->add('container', 'Container');
+#my $composeContainer = $composePage->add('composeContainer', 'Container');
 
 #creates the label for the subject text entry
-my $subjectlabel = $container->add('subjectlabel', 'Label', -Text=>'Subject:' );
+my $subjectlabel = $composePage->add('subjectlabel', 'Label', -Text=>'Subject:' );
 
 #the text of the subject
-my $subject=$container->add('subject', 'TextEntry', -x=>9);
+my $subject=$composePage->add('subject', 'TextEntry', -x=>9);
 
 #body
-my $body=$container->add('body', 'TextEditor', -y=>3,
+my $body=$composePage->add('body', 'TextEditor', -y=>3,
+						 -wrapping=>1, -vscrollbar=>1,
+						 -showlines=>0, -regexp=>'/[[:print:]]/');
+
+#to
+my $to=$addressPage->add('to', 'TextEditor', -y=>2,
+						 -wrapping=>1, -vscrollbar=>1,
+						 -showlines=>0, -height=>7,
+						 -regexp=>'/[[:print:]]/');
+$to->focus;
+my $toLabel=$addressPage->add('toLabel', 'Label', -y=>1, -Text=>'To:' );
+$to->text(join("\n", @to));
+
+#cc
+my $cc=$addressPage->add('cc', 'TextEditor', -y=>10,
+						 -wrapping=>1, -vscrollbar=>1,
+						 -showlines=>0, -height=>7,
+						 -regexp=>'/[[:print:]]/');
+my $ccLabel=$addressPage->add('ccLabel', 'Label', -y=>9, -Text=>'CC:' );
+$cc->text(join("\n", @cc));
+
+#bcc
+my $bcc=$addressPage->add('bcc', 'TextEditor', -y=>18,
+						 -wrapping=>1, -vscrollbar=>1,
+						 -showlines=>0, -height=>7,);
+my $bccLabel=$addressPage->add('bccLabel', 'Label', -y=>17, -Text=>'BCC:' );
+$bcc->text(join("\n", @bcc));
+
+#files
+my $filesT=$filePage->add('filesT', 'TextEditor', -y=>1,
 						 -wrapping=>1, -vscrollbar=>1
 						 -showlines=>1);
+$filesT->focus;
+my $filesLabel=$filePage->add('filesLabel', 'Label', -Text=>'Files, one per line.' );
 
 #quit and send buttons
-my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
+my $buttons=$composePage->add('buttons', 'Buttonbox', -y=>1,
 							-buttons=>[{-label=>'quit',
 										-value=>'quit',
 										-onpress=>sub{exit 0}
@@ -146,17 +180,28 @@ my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
 													  my $subject=$subject->get();
 													  #gets the body
 													  my $body=$body->get();
+													  #gets the addresses
+													  @to=split(/\n/, $to->get);
+													  @cc=split(/\n/, $cc->get);
+													  @bcc=split(/\n/, $bcc->get);
+													  @files=split(/\n/, $filesT->get);
 													  #creates the mail
 													  my $mesg=$mail->createMimeLite({
 																					  account=>$opts{a},
 																					  to=>\@to,
 																					  cc=>\@cc,
-																					  files=>\@files,
+																					  files=>\@cc,
 																					  subject=>$subject,
 																					  body=>$body,
 																					  'in-reply-to'=>$opts{r}
 																					  }
 																					 );
+													  if ($mail->{error}) {
+														  $cui->error(-message=>"Error sending the message.\n".
+																	  "error: ".$mail->{error}."\n".
+																	  "errorString: ".$mail->{errorString});
+														  return;
+													  }
 													  #sends the mail
 													  $mail->send({
 																   account=>$opts{a},
@@ -167,16 +212,90 @@ my $buttons=$container->add('buttons', 'Buttonbox', -y=>1,
 																   mail=>$mesg->as_string,
 																   }
 																  );
-													  if ($self->{error}) {
-														  exit $self->{error};
+													  if ($mail->{error}) {
+														  $cui->error(-message=>"Error sending the message.\n".
+																	  "error: ".$mail->{error}."\n".
+																	  "errorString: ".$mail->{errorString});
+														  return;
+													  }else {
+														  exit;
 													  }
-													  exit;
 												  }
 										}
 									   ]);
 
 #creates the label for the subject text entry
-my $bodylabel = $container->add('bodylabel', 'Label', -Text=>'Body:', -y=>2 );
+my $bodylabel = $composePage->add('bodylabel', 'Label', -Text=>'Body:', -y=>2 );
+
+#
+$cui->set_binding(sub{
+					  $body->text($mail->formatter($body->get));
+				  },
+				  "\cf");
+
+#exits it
+$cui->set_binding(sub{
+					  exit 0;
+				  },
+				  "\cq");
+
+#attach a file
+$cui->set_binding(sub{
+					  my $file=$cui->filebrowser;
+					  @files=split(/\n/, $filesT->get);
+					  push(@files, $file);
+					  $filesT->text(join("\n", @files));
+				  },
+				  "\ca");
+
+#send it
+$cui->set_binding(sub{my $self=$_[0];
+					  #gets the subject
+					  my $subject=$subject->get();
+					  #gets the body
+					  my $body=$body->get();
+					  #gets the addresses
+					  @to=split(/\n/, $to->get);
+					  @cc=split(/\n/, $cc->get);
+					  @bcc=split(/\n/, $bcc->get);
+					  @files=split(/\n/, $filesT->get);
+					  #creates the mail
+					  my $mesg=$mail->createMimeLite({
+													  account=>$opts{a},
+													  to=>\@to,
+													  cc=>\@cc,
+													  files=>\@cc,
+													  subject=>$subject,
+													  body=>$body,
+													  'in-reply-to'=>$opts{r}
+													  }
+													 );
+					  if ($mail->{error}) {
+						  $cui->error(-message=>"Error sending the message.\n".
+									  "error: ".$mail->{error}."\n".
+									  "errorString: ".$mail->{errorString});
+						  return;
+					  }
+					  #sends the mail
+					  $mail->send({
+								   account=>$opts{a},
+								   to=>\@to,
+								   cc=>\@cc,
+								   bcc=>\@bcc,
+								   subject=>$subject,
+																   mail=>$mesg->as_string,
+								   }
+								  );
+					  if ($mail->{error}) {
+						  $cui->error(-message=>"Error sending the message.\n".
+									  "error: ".$mail->{error}."\n".
+									  "errorString: ".$mail->{errorString});
+						  return;
+					  }else {
+						  exit;
+					  }
+				  },
+				  "\cl");
 
 $cui->mainloop;
 
@@ -196,15 +315,49 @@ The account to send the mail using.
 
 =head2 B<-t> <addresses>
 
-A cama delimited to address list.
+A comma delimited to address list.
 
 =head2 B<-c> <addresses>
 
-A cama delimited CC address list.
+A comma delimited CC address list.
 
 =head2 B<-b> <addresses>
 
-A cama delimited BCC address list.
+A comma delimited BCC address list.
+
+=head2 B<-f> <files>
+
+A comma delimited BCC address list.
+
+=head1 HOTKEYS
+
+Please see Curses::UI::TextEditor for the support hot keys.
+
+Additional ones are listed below.
+
+=head2 CTRL+a
+
+Attach a file.
+
+=head2 CTRL+f
+
+Call the formatter.
+
+=head2 CTRL+l
+
+Send.
+
+=head2 CTRL+n
+
+Changes to the next tab.
+
+=head2 CTRL+p
+
+Changes to the previous tab.
+
+=head2 CTRL+q
+
+Exit.
 
 =head1 AUTHOR
 

@@ -31,7 +31,7 @@ $Getopt::Std::STANDARD_HELP_VERSION=1;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcmailcompose 0.1.0\n";
+        print "zcmailcompose 0.2.0\n";
 };
 
 #print help
@@ -61,18 +61,6 @@ if ($zcm->{error}) {
 my %opts=();
 getopts('a:t:c:b:f:r:', \%opts);
 my %args;
-
-#makes sure that -a is defined
-#if (!defined($opts{a})) {
-#	warn('zcmailcompose: No account defined.');
-#	exit 1;
-#}
-
-#makes sure that -t is defined
-if (!defined($opts{t})) {
-	warn('zcmailcompose: No to defined.');
-	exit 1;
-}
 
 #breaks the to appart
 my @to=split(/,/, $opts{t});

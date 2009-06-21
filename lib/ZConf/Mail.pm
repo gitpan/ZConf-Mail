@@ -16,6 +16,7 @@ use File::MimeInfo::Magic;
 use Email::Date;
 use Sys::Hostname;
 use MIME::QuotedPrint;
+use Text::Autoformat;
 
 =head1 NAME
 
@@ -23,11 +24,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 1.1.0
+Version 1.2.0
 
 =cut
 
-our $VERSION = '1.1.0';
+our $VERSION = '1.2.0';
 
 
 =head1 SYNOPSIS
@@ -1852,6 +1853,75 @@ sub fetchPOP3{
 	return $count;
 }
 
+=head2 formatter
+
+Automatically format a chunk of text against various settings,
+primarily line wrapping.
+
+=cut
+
+sub formatter{
+	my $self=$_[0];
+	my $text=$_[1];
+
+	my %f=$self->{zconf}->regexVarGet('mail', '^formatter/');
+
+	if (!defined($f{'formatter/marginLeft'})) {
+		$f{'formatter/marginLeft'}=0;
+	}
+
+	if (!defined($f{'formatter/marginRight'})) {
+		$f{'formatter/marginRight'}=72;
+	}
+
+	if (!defined($f{'formatter/squeeze'})) {
+		$f{'formatter/squeeze'}=1;
+	}
+
+	if (!defined($f{'formatter/ignoree'})) {
+		$f{'formatter/ignore'}='^[ \t]';
+	}
+
+	if (!defined($f{'formatter/justify'})) {
+		$f{'formatter/justify'}='left';
+	}
+
+	if (!defined($f{'formatter/tabspace'})) {
+		$f{'formatter/tabspace'}='4';
+	}
+
+	my $ignore=$f{'formatter/justify'};
+
+	$text=autoformat($text, {left=>$f{'formatter/marginLeft'},
+							 right=>$f{'formatter/marginRight'},
+							 squeeze=>$f{'formatter/squeeze'},
+							 justify=>$f{'formatter/justify'},
+							 ignore=>qr/$ignore/,
+							 all=>1});
+
+	return $text;
+}
+
+=head2 formatterGet
+
+Get an option for the formatter.
+
+=cut
+
+sub formatterGet{
+
+}
+
+=head2 formatterSet
+
+Set some options for the formatter.
+
+=cut
+
+sub formatterSet{
+
+}
+
 =head2 getAccounts
 
 Gets a array of the various accounts.
@@ -2799,6 +2869,32 @@ into it. Only a single message is delivered at once.
 
 A example would be setting this to '/usr/local/libexec/dovecot/deliver' to deliver a
 message one's dovecot account.
+
+=head2 FORMATTER
+
+=head3 formatter/marginLeft
+
+This is the left margin. The default is zero if this is not defined.
+
+=head3 formatter/marginRight
+
+This is the right margin. The default is 72 if this is not defined.
+
+=head3 formatter/squeeze
+
+Removes unneeded whitespace. This is on by default.
+
+=head3 formatter/ignore
+
+Don't reformat any paragraph that matches this line. The default is '^[ \t]'.
+
+=head3 formatter/justify
+
+How to justify the text. The default is left.
+
+=head3 formatter/tabspace
+
+This is the default spaces per tab. The default is '4'.
 
 =head2 MISC
 
