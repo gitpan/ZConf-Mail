@@ -32,7 +32,7 @@ use Text::SpellChecker::GUI;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcmailcompose 1.0.0\n";
+        print "zcmailcompose 1.1.0\n";
 };
 
 #print help
@@ -172,11 +172,34 @@ my $filesLabel=$filePage->add('filesLabel', 'Label', -Text=>'Files, one per line
 my $buttons=$composePage->add('buttons', 'Buttonbox', -y=>1,
 							-buttons=>[{-label=>'quit',
 										-value=>'quit',
-										-onpress=>sub{exit 0}
+										-onpress=>sub{
+											          #check if check it quit or not
+											          my $ask=$cui->dialog(
+																		   -message => "Quit?",
+																		   -buttons => ['no','yes'],
+																		   -values  => [0,1],
+																		   -title   => 'Quit?',
+																		   );
+													  if (!$ask) {
+														  return;
+													  }
+													  exit 0}
 										},
 									   {-label=>'send',
 										-value=>'send',
-										-onpress=>sub{my $self=$_[0];
+										-onpress=>sub{
+											          #check if check it send or not
+											          my $ask=$cui->dialog(
+																		   -message => "Send?",
+																		   -buttons => ['no','yes'],
+																		   -values  => [0,1],
+																		   -title   => 'Send?',
+																		   );
+													  if (!$ask) {
+														  return;
+													  }
+
+											          my $self=$_[0];
 													  #gets the subject
 													  my $subject=$subject->get();
 													  #gets the body
@@ -254,6 +277,17 @@ $cui->set_binding(sub{
 
 #exits it
 $cui->set_binding(sub{
+					  #check if quit it send or not
+					  my $ask=$cui->dialog(
+										   -message => "Quit?",
+										   -buttons => ['no','yes'],
+										   -values  => [0,1],
+										   -title   => 'Quit?',
+										   );
+					  if (!$ask) {
+						  return;
+					  }
+
 					  exit 0;
 				  },
 				  "\cq");
@@ -269,6 +303,17 @@ $cui->set_binding(sub{
 
 #send it
 $cui->set_binding(sub{my $self=$_[0];
+					  #check if check it send or not
+					  my $ask=$cui->dialog(
+										   -message => "Send?",
+										   -buttons => ['no','yes'],
+										   -values  => [0,1],
+										   -title   => 'Send?',
+										   );
+					  if (!$ask) {
+						  return;
+					  }
+
 					  #gets the subject
 					  my $subject=$subject->get();
 					  #gets the body

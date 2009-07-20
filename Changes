@@ -1,5 +1,8 @@
 Revision history for ZConf-Mail
 
+1.4.0	2009-07-20/01:00
+		-Add asking on quiting and sending for 'bin/curses-zcmailcompose'.
+
 1.3.0	2009-07-19/22:00
 		-Fix initilizing ZConf::Mail in ZConf::Mail::GUI::Curses.
 		-Add spell checking support to 'bin/curses-zcmailcompose'.
