@@ -12,11 +12,11 @@ ZConf::Mail::GUI::Curses - The Curses backend for ZConf::Mail::GUI.
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.1.1
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.1.1';
 
 =head1 SYNOPSIS
 
@@ -71,7 +71,7 @@ sub new{
 	if (defined($args{zcmail})) {
 		$self->{zcmail}=$args{zcmail};
 	}else {
-		$self->{zcmail}=ZConf::Runner->new();
+		$self->{zcmail}=ZConf::Mail->new();
 	}
 
 	#

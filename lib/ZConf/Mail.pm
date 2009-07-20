@@ -24,11 +24,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 1.2.0
+Version 1.3.0
 
 =cut
 
-our $VERSION = '1.2.0';
+our $VERSION = '1.3.0';
 
 
 =head1 SYNOPSIS
@@ -195,6 +195,7 @@ sub connectIMAP{
 		warn('ZConf-Mail connectIMAP:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		return undef;;
 	}
 
 	#No need to verify the account exists as $self->getsAccountArgs will do that.
@@ -1095,6 +1096,71 @@ sub defaultSendableSet{
 		$self->{errorString}='ZConf failed to write the set out.';
 		$self->{error}=36;
 		warn('ZConf-Mail defaultSendableSet:36: '.$self->{errorString});
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 defaultImapGet
+
+This gets what the default IMAP account is.
+
+=cut
+
+sub defaultImapGet{
+	my $self=$_[0];
+	$self->errorBlank;
+
+	my %var=$self->{zconf}->regexVarGet('mail', '^default/imap$');
+
+	if (!defined($var{'default/imap'})) {
+		return undef;
+	}
+
+	if ($var{'default/imap'} eq '') {
+		return undef;
+	}
+
+	return $var{'default/imap'};
+}
+
+=head2 defaultImapSet
+
+This gets what the default IMAP account is.
+
+=cut
+
+sub defaultImapSet{
+	my $self=$_[0];
+	my $account=$_[1];
+
+	$self->errorBlank;
+
+	#make sure we have a account
+	if (!defined($account)) {
+		$self->{errorString}='Account not specified.';
+		$self->{error}='5';
+		warn('ZConf-Mail defaultImapSet:5: '.$self->{errorString});
+		return undef;
+	}
+	
+	my $sendable=$self->sendable($account);
+	if ($self->{error}) {
+		warn('ZConf-Mail defaultSendableSet: sendable errored');
+		return undef;
+	}
+
+	#sets the value
+	#not doing any error checking as there is no reason to believe it will fail
+	$self->{zconf}->setVar('mail', 'default/imap', $account);
+
+	#saves it
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
+	if ($self->{zconf}->{error}) {
+		$self->{errorString}='ZConf failed to write the set out.';
+		$self->{error}=36;
+		warn('ZConf-Mail defaultImapSet:36: '.$self->{errorString});
 		return undef;
 	}
 

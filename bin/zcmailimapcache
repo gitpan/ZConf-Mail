@@ -24,122 +24,138 @@
 
 use warnings;
 use strict;
-use ZConf::Mail::GUI;
+use ZConf::Mail;
 use Getopt::Std;
+use Mail::Cache;
+use Mail::IMAPTalk::MailCache;
+
 
 $Getopt::Std::STANDARD_HELP_VERSION=1;
 
 #version function
 sub main::VERSION_MESSAGE {
-        print "zcmailcompose 0.2.0\n";
+        print "curses-zcmailimapclient 0.0.0\n";
 };
 
 #print help
 sub main::HELP_MESSAGE {
         print "\n".
-		      "-a <account>  The account to use for sending.\n".
-		      "-t <addresses>  The to addresses.\n".
-			  "-c <addresses>  The CC addresses.\n".
-			  "-f <file>  File to attach.\n".
-			  "-r <<In-Reply-To value>>  This is the value to value of the In-ReplyTo header to.\n".
-			  "-b <addresses>  The BCC addresses.\n\n".
-              "Atleast 1 to address is required.\n\n".
-              "Examples:\n".
-              "zcmailcompose -t foo\@bar   Sends a email to foo\@bar.\n".
-			  "zcmailcompose -t foo\@bar,this\@that   Sends a email to foo\@bar and this\@thar.\n";
+		      "-s <set>  The set to operate on.\n".
+		      "-a <account>  The account to act on.\n".
+			  "-f <folder>  The folder to operate on.\n".
+			  "-A  Process all subscriped folders.\n";
 		exit 1;
 };
 
-#initiates ZConf::Mail
-my $zcm=ZConf::Mail->new();
-if ($zcm->{error}) {
-	warn('zcmailaccountmanage: Initializing ZConf::Mail failed');
-	exit $zcm->{error};
-}
-
 #gets the options
 my %opts=();
-getopts('a:t:c:b:f:r:', \%opts);
-my %args;
+getopts('s:a:f:A', \%opts);
 
-#breaks the to appart
-my @to=split(/,/, $opts{t});
 
-#breaks the cc apart if needed
-my @cc;
-if (defined($opts{c})) {
-	@cc=split(/,/, $opts{c});
-}
+#initializes it
+my $mail=ZConf::Mail->new;
 
-#breaks the cc apart if needed
-my @bcc;
-if (defined($opts{b})) {
-	@bcc=split(/,/, $opts{b});
-}
-
-#breackes the files apart if needed
-my @files;
-if (defined($opts{f})) {
-	@files=split(/,/, $opts{f});
-}
-
-#makes sure the defined account is a smtp account
-if (!$opts{a} =~ /^smtp\//) {
-	warn('zcmailcompose: Not a sendable account.');
-	exit 1;
-}
-
-#read a set if needed
-if (defined($opts{s})) {
-	$zcm->readSet($opts{s});
-	if ($zcm->{error}) {
-			warn('zcmailaccountmanage: Error reading the set "'.$opts{s}.'"');
-			exit $zcm->{error};		
+if (!defined($opts{a})) {
+	$opts{a}=$mail->defaultImapGet;
+	if (!defined($opts{a})) {
+		warn('zcmailimapcache: No default IMAP account defined.');
+		exit 255;
 	}
 }
 
+my $imap=$mail->connectIMAP($opts{a});
+if ($mail->{error}) {
+	warn('curses-zcmailimapclient: Failed to connect to the IMAP server.'
+		 .'error="'.$mail->{error}.'" errorString="'.$mail->{errorString}.'"');
+	exit $mail->{error};
+}
+
 #
-my %hash;
-$hash{to}=\@to;
-$hash{cc}=\@cc;
-$hash{bcc}=\@bcc;
-$hash{files}=\@files;
-$hash{account}=$opts{a};
+my %avars=$mail->getAccountArgs($opts{a});
 
+my $toselect='INBOX';
 
-my $zcmg=ZConf::Mail::GUI->new({zcmail=>$zcm});
+if (defined($opts{f})) {
+	$toselect=$opts{f};
+}
 
-$zcmg->compose(\%hash);
+my $mcaccount=$opts{a};
+$mcaccount=~s/^imap\///;
+
+my $mc=Mail::Cache->new;
+
+if (defined($opts{A})) {
+	my $subs=$imap->lsub('', '*');
+
+#	use Data::Dumper;
+#	print Data::Dumper->Dump($subs);
+
+	my $int=0;
+	while (defined($subs->[$int])) {
+		print 'processing '.$subs->[$int][2]."\n";
+
+		my $select=$imap->select($subs->[$int][2]);
+		
+		if (!$select) {
+			warn('zcmailimapcache: Failed to select "'.$subs->[$int][2].'"');
+			exit 254;
+		}
+		
+		$mc->init('ZConf::Mail', 'imap', $mcaccount, $subs->[$int][2]);
+		
+		#cache it
+		my %returned=Mail::IMAPTalk::MailCache->cache($imap, $mc, 0);		
+		
+		$int++;
+	}
+	
+
+}else {
+	my $select=$imap->select($toselect);
+	
+	if (!$select) {
+		warn('zcmailimapcache: Failed to select "'.$toselect.'"');
+		exit 254;
+	}
+	
+	$mc->init('ZConf::Mail', 'imap', $mcaccount, $toselect);
+	
+	#cache it
+	my %returned=Mail::IMAPTalk::MailCache->cache($imap, $mc, 0);
+	
+	#exits with what ever the returned error int was
+	#0 is good... see the docs for Mail::IMAPTalk::MailCache for others
+	exit $returned{error};
+}
 
 =head1 NAME
 
-zcmailcompose - Compose and send a simple email using ZConf::Mail.
+zcmailimapcache - Update a Mail::Cache cache for a IMAP account.
 
 =head1 SYNOPSIS
 
-zcgetmail B<-a> <account> [B<-t> <addresses>] [B<-c> <addresses>] [B<-b> <addresses>]
+zcgetmail [B<-s> <set>] B<-a> <account> [B<-A>] [B<-f> <folder>]
+
+=head1 DESCRIPTION
+
+Either -A or -f needs given.
+
+This can take a while to run for the first time if you have a large IMAP
+setup.
 
 =head1 SWITCHES
 
 =head2 B<-a> <account>
 
-The account to send the mail using.
+This is the account to do the caching for.
 
-=head2 B<-t> <addresses>
+=head2 B<-A>
 
-A cama delimited to address list.
+Handle the caching for all subscribed folders.
 
-=head2 B<-c> <addresses>
+=head2 B<-f> <folder>
 
-A cama delimited CC address list.
-
-=head2 B<-b> <addresses>
-
-A cama delimited BCC address list.
-
-=head1 HOTKEYS
-
-For these see the POD for the backend in use. The default is 'curses-zcmailcompose'.
+Just do the caching on this folder.
 
 =head1 AUTHOR
 
@@ -178,6 +194,7 @@ any
 
 =head1 README
 
-zcmailcompose - Compose and send a simple email using ZConf::Mail.
+zcmailimapcache - Update a Mail::Cache cache for a IMAP account.
 
 =cut
+

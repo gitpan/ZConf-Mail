@@ -1,9 +1,16 @@
 Revision history for ZConf-Mail
 
+1.3.0	2009-07-19/22:00
+		-Fix initilizing ZConf::Mail in ZConf::Mail::GUI::Curses.
+		-Add spell checking support to 'bin/curses-zcmailcompose'.
+		-Note that hot key info should be found in the corresponding POD.
+		-Add 'bin/zcmailimapcache'.
+
 1.2.0	2009-06-21/14:00
 		-Updated look for 'bin/curses-zcmailcompose'.
 		-Compose no longer requires either a to or cc address for compose.
 		-Document the hot keys for 'ZConf::Mail::GUI::Curses'.
+		-Fix the README.
 
 1.1.0	2009-06-17/11:50
 		-Correct ZConf::Mail::GUI->compose documentation as the info

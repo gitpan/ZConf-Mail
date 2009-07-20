@@ -16,3 +16,4 @@ bin/zcmailacountmanage
 bin/curses-zcmailcompose
 bin/curses-zcmailacountmanage
 bin/zcmailuri
+bin/zcmailimapcache

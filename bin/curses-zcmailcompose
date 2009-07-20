@@ -28,6 +28,7 @@ use ZConf::Mail;
 use Getopt::Std;
 use Curses::UI;
 use Curses::UI::Common;
+use Text::SpellChecker::GUI;
 
 #version function
 sub main::VERSION_MESSAGE {
@@ -233,6 +234,24 @@ $cui->set_binding(sub{
 				  },
 				  "\cf");
 
+#spell check it
+$cui->set_binding(sub{
+					  my $text=$body->get;
+					  my $sg=Text::SpellChecker::GUI->new({zconf=>$mail->{zconf}});
+					  my %returned=$sg->check($text);
+					  if($sg->{error}){
+						  warn('curses-zcmailcompose: Text::SpellChecker::GUI errored. error="'.
+							   $sg->{error}.'" errorString="'.$sg->{errorString}.'"');
+					  }else{
+						  if(!$returned{cancel}){
+							  $text=$returned{text};
+							  $body->text($text);
+						  }
+					  }
+				  },
+				  "\cc");
+
+
 #exits it
 $cui->set_binding(sub{
 					  exit 0;
@@ -295,7 +314,7 @@ $cui->set_binding(sub{my $self=$_[0];
 						  exit;
 					  }
 				  },
-				  "\cl");
+				  "\cs");
 
 $cui->mainloop;
 
@@ -339,13 +358,13 @@ Additional ones are listed below.
 
 Attach a file.
 
+=head2 CTRL+c
+
+Call Text::SpellChecker::GUI to do spell checking.
+
 =head2 CTRL+f
 
 Call the formatter.
-
-=head2 CTRL+l
-
-Send.
 
 =head2 CTRL+n
 
@@ -358,6 +377,10 @@ Changes to the previous tab.
 =head2 CTRL+q
 
 Exit.
+
+=head2 CTRL+s
+
+Send.
 
 =head1 AUTHOR
 
