@@ -1,5 +1,9 @@
 Revision history for ZConf-Mail
 
+1.4.1	2010-06-26/07:10
+		-Correct the requirements in 'Makefile.PL'.
+		-Remove some mentions of 'ZConf::Runner' in 'ZConf::Mail::GUI::Curses'.
+
 1.4.0	2009-07-20/01:00
 		-Add asking on quiting and sending for 'bin/curses-zcmailcompose'.
 

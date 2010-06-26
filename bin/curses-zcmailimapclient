@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+#Copyright (c) 2009, Zane C. Bowers
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+use ZConf::Mail;
+use Getopt::Std;
+use Curses::UI;
+#use Curses::UI::Grid;
+use Mail::Cache;
+use Mail::IMAPTalk::SortHelper;
+
+$Getopt::Std::STANDARD_HELP_VERSION=1;
+
+#version function
+sub main::VERSION_MESSAGE {
+        print "curses-zcmailimapclient 0.0.0\n";
+};
+
+#print help
+sub main::HELP_MESSAGE {
+        print "\n".
+		      "-s <set>  The set to operate on.\n".
+			  "-a <account>  The account to operate on.\n".
+			  "-f <folder>  The folder to view initially.\n";
+		exit 1;
+};
+
+#gets the options
+my %opts=();
+getopts('s:a:f:', \%opts);
+
+#initializes it
+my $mail=ZConf::Mail->new;
+
+if (!defined($opts{a})) {
+	$opts{a}=$mail->defaultImapGet;
+}
+
+my $imap=$mail->connectIMAP($opts{a});
+if ($mail->{error}) {
+	warn('curses-zcmailimapclient: Failed to connect to the IMAP server.'
+		 .'error="'.$mail->{error}.'" errorString="'.$mail->{errorString}.'"');
+	exit $mail->{error};
+}
+
+#
+my %avars=$mail->getAccountArgs($opts{a});
+
+#
+if (!defined($opts{f})) {
+	$opts{f}='INBOX';
+}
+
+#make sure the folder exists
+my $select=$imap->select($opts{f});
+if (!$select) {
+	warn('curses-zcmailimapclient: Could not select the folder, "'.$opts{f}.'".');
+	exit 254;
+}
+
+#initiates the Mail::Cache object
+my $mcaccount=$opts{a};
+$mcaccount=~s/^imap\///;
+my $mc=Mail::Cache->new;
+$mc->init('ZConf::Mail', 'imap', $mcaccount, $opts{f});
+
+my $sorted=$imap->thread('REFERENCES', 'UTF8', 'NOT', 'DELETED');
+
+my $sh = Mail::IMAPTalk::SortHelper->new();
+my @maillist=$sh->process($sorted, $imap, $mc);
+
+
+my $cui = new Curses::UI (
+						  -clear_on_exit => 1,
+						  -debug => 0,
+						  -color_support => 1,
+						  );
+
+$cui->set_binding( sub{ exit }, "\cQ" );
+
+my %windows;
+
+$windows{0}=$cui->add('w0', 'Window'
+					  ,-border=> 1
+					  ,-height=> 4000,
+					  -y=>1
+					  );
+#quit and send buttons
+my $buttons=$windows{0}->add('buttons', 'Buttonbox', -y=>-0,
+							-buttons=>[{-label=>'quit',
+										-value=>'quit',
+										-onpress=>sub{
+											          #check if check it quit or not
+											          my $ask=$cui->dialog(
+																		   -message => "Quit?",
+																		   -buttons => ['no','yes'],
+																		   -values  => [0,1],
+																		   -title   => 'Quit?',
+																		   );
+													  if (!$ask) {
+														  return;
+													  }
+													  exit 0;
+												  }
+										}
+									   ]
+									   );
+#exits it
+$cui->set_binding(sub{
+					  #check if quit it send or not
+					  my $ask=$cui->dialog(
+										   -message => "Quit?",
+										   -buttons => ['no','yes'],
+										   -values  => [0,1],
+										   -title   => 'Quit?',
+										   );
+					  if (!$ask) {
+						  return;
+					  }
+
+					  exit 0;
+				  },
+				  "\cq");
+
+$cui->mainloop;

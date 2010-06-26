@@ -2,7 +2,6 @@ package ZConf::Mail::GUI::Curses;
 
 use warnings;
 use strict;
-use ZConf::Runner;
 use Curses::UI;
 use String::ShellQuote;
 
@@ -20,11 +19,11 @@ our $VERSION = '0.1.1';
 
 =head1 SYNOPSIS
 
-This provides the Curses backend for ZConf::Runner::GUI.
+This provides the Curses backend for ZConf::Mail::GUI.
 
     use ZConf::Mail::GUI::Curses;
 
-    my $zcmail=ZConf::Runner::GUI::Curses->new();
+    my $zcmail=ZConf::Mail::GUI::Curses->new();
 
 =head1 METHODES
 
@@ -382,7 +381,7 @@ L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=ZConf-Mail>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
-L<http://annocpan.org/dist/ZConf-Runner>
+L<http://annocpan.org/dist/ZConf-Mail>
 
 =item * CPAN Ratings
 
