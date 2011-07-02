@@ -4,11 +4,11 @@ use Email::Simple;
 use Email::Simple::Creator;
 use Mail::IMAPTalk;
 use Mail::POP3Client;
+use ZConf;
 use Net::SMTP_auth;
 use Net::SMTP::TLS;
 use Mail::Box::Manager;
 use IO::MultiPipe;
-use ZConf;
 use warnings;
 use strict;
 use MIME::Lite;
@@ -24,11 +24,11 @@ ZConf::Mail - Misc mail client functions backed by ZConf.
 
 =head1 VERSION
 
-Version 1.4.1
+Version 2.0.0
 
 =cut
 
-our $VERSION = '1.4.1';
+our $VERSION = '2.0.0';
 
 
 =head1 SYNOPSIS
@@ -62,35 +62,44 @@ sub new {
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='new';
 	
-	my $self={error=>undef, set=>undef};
+	my $self={
+			  error=>undef,
+			  set=>undef,
+			  perror=>undef,
+			  module=>'ZConf-Mail',
+			  };
 	bless $self;
 
-	#this is done to keep from throwing an error when we try to pass it to ZConf->new
-	if (!defined($args{zconf})) {
-		$args{zconf}={};
-	}
 
-	$self->{zconf}=ZConf->new(%{$args{zconf}});
-	if(defined($self->{zconf}->{error})){
-		warn("ZConf-Cron new:1: Could not initiate ZConf. It failed with '"
-			 .$self->{zconf}->{error}."', '".$self->{zconf}->{errorString}."'");
-		$self->{error}=1;
-		return $self;
+	if (!defined( $args{zconf} )) {
+		$self->{zconf}=ZConf->new({});
+		if ($self->{zconf}->error) {
+			$self->{error}=1;
+			$self->{perror}=1;
+			$self->{errorString}="It failed with '".$self->{zconf}->{error}."', '".$self->{zconf}->{errorString}."'";
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+			return $self;
+		}
+	}else {
+		$self->{zconf}=$args{zconf};
 	}
 
 	#sets $self->{init} to a Perl boolean value...
 	#true=config does exist
 	#false=config does not exist
 	$self->{init}=undef;
+
 	if ($self->{zconf}->configExists('mail')){
 		$self->{init}=1;
 		$self->{zconf}->read({config=>'mail'});
-		if (defined($self->{zconf}->{error})) {
-			warn('ZConf-Mail new:18: Failed to read the ZConf config "mail"');
+		if ($self->{zconf}->error) {
 			$self->{error}=18;
+			$self->{perror}=1;
 			$self->{errorString}='Failed to read the ZConf config "mail"';
-			return undef;
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+			return $self;
 		}
 	}
 
@@ -107,6 +116,7 @@ sub new {
 						  'usePGP', 'pgpType', 'PGPkey', 'PGPdigestAlgo'];
 	$self->{legal}{maildir}=['maildir','deliverTo', 'deliverToFolder', 'fetchable'];
 	$self->{legal}{exec}=['deliver'];
+	$self->{legal}{formatter}=['marginLeft', 'marginRight', 'squeeze', 'ignore', 'justify', 'tabspace'];
 
 	#this defines the required values for later use
 	$self->{required}{pop3}=['user', 'pass', 'auth', 'useSSL',
@@ -146,17 +156,24 @@ Checks to make sure a accont exists. One arguement is taken and that is the acco
 sub accountExists{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='accountExists';
 
+	#blanks any prevous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that. It also makes sure that
 	#nothing past the account name is refered to.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail accountExists:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#searches and finds any variables for the account
@@ -176,8 +193,8 @@ This connects Mail::IMAPTalk connection to a IMAP account.
 
     #connects to the IMAP account 'imap/foo'
     my $imap=$zcmail->connectIMAP('imap/foo');
-    if($zcmail->{error})(
-        print "Error!";
+    if($zcmail->error)(
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     )
 
 =cut
@@ -185,16 +202,22 @@ This connects Mail::IMAPTalk connection to a IMAP account.
 sub connectIMAP{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='connectIMAP';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail connectIMAP:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;;
 	}
 
@@ -207,11 +230,10 @@ sub connectIMAP{
 	my $requiredInt=0;
 	while (defined($self->{required}{$split[0]}[$requiredInt])) {
 		if (!defined($avars{$self->{required}{imap}[$requiredInt]})) {
-			warn('ZConf-Mail connectIMAP:32: "'.$self->{required}{$split[0]}[$requiredInt].
-				 '" is undefined for the account "'.$account.'"');
 			$self->{error}=32;
 			$self->{errorString}='"'.$self->{required}{$split[0]}[$requiredInt].
 			                     '" is undefined for the account "'.$account.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$requiredInt++;
@@ -240,9 +262,9 @@ sub connectIMAP{
 
 	#checks to see if it connected or not
 	if (!$imap) {
-		warn('ZConf-Mail connectIMAP:9: Failed to connect to IMAP server or authenticate');
 		$self->{error}=9;
 		$self->{errorString}='Failed to connect to IMAP server or authenticate';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -255,8 +277,8 @@ Creates a new Mail::Box::Maildir object for accessing the maildir.
 
     #connects to the maildir account 'maildir/foo'
     my $imap=$zcmail->connectMaildir('maildir/foo');
-    if($zcmail->{error})(
-        print "Error!";
+    if($zcmail->error)(
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     )
 
 =cut
@@ -264,14 +286,23 @@ Creates a new Mail::Box::Maildir object for accessing the maildir.
 sub connectMaildir{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='connectMaildir';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail connectMaildir:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#No need to verify the account exists as $self->getsAccountArgs will do that.
@@ -283,11 +314,10 @@ sub connectMaildir{
 	my $requiredInt=0;
 	while (defined($self->{required}{$split[0]}[$requiredInt])) {
 		if (!defined($avars{$self->{required}{maildir}[$requiredInt]})) {
-			warn('ZConf-Mail connectMaildir:32: "'.$self->{required}{$split[0]}[$requiredInt].
-				 '" is undefined for the account "'.$account.'"');
 			$self->{error}=32;
 			$self->{errorString}='"'.$self->{required}{$split[0]}[$requiredInt].
 			                     '" is undefined for the account "'.$account.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$requiredInt++;
@@ -298,10 +328,9 @@ sub connectMaildir{
 
 	#checks for an error
 	if (!$maildir) {
-		warn('ZConf-Maildir connectMaildir:14: Failed to access the maildir, "'
-			 .$avars{maildir}.'"');
 		$self->{error}=14;
 		$self->{errorString}='Failed to access the maildir, "'.$avars{maildir}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	return $maildir;
@@ -313,8 +342,8 @@ Creates a new Mail::Box::Mbox object for accessing the mbox.
 
     #connects to the mbox account 'mbox/foo'
     my $imap=$zcmail->connectMbox('mbox/foo');
-    if($zcmail->{error})(
-        print "Error!";
+    if($zcmail->error)(
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     )
 
 =cut
@@ -322,14 +351,23 @@ Creates a new Mail::Box::Mbox object for accessing the mbox.
 sub connectMbox{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='connectMbox';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail connectMbox:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#No need to verify the account exists as $self->getsAccountArgs will do that.
@@ -341,11 +379,10 @@ sub connectMbox{
 	my $requiredInt=0;
 	while (defined($self->{required}{$split[0]}[$requiredInt])) {
 		if (!defined($avars{$self->{required}{mbox}[$requiredInt]})) {
-			warn('ZConf-Mail connectMbox:32: "'.$self->{required}{$split[0]}[$requiredInt].
-				 '" is undefined for the account "'.$account.'"');
 			$self->{error}=32;
 			$self->{errorString}='"'.$self->{required}{$split[0]}[$requiredInt].
 			                     '" is undefined for the account "'.$account.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$requiredInt++;
@@ -356,10 +393,9 @@ sub connectMbox{
 
 	#checks for an error
 	if (!$mbox) {
-		warn('ZConf-Maildir connectMbox:14: Failed to access the mbox, "'
-			 .$avars{mbox}.'"');
 		$self->{error}=14;
 		$self->{errorString}='Failed to access the mbox, "'.$avars{mbox}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	return $mbox;
@@ -371,8 +407,8 @@ This connects Mail::POP3Client connection to a POP3 account.
 
     #connects to the mbox account 'pop3/foo'
     my $imap=$zcmail->connectPOP3('pop3/foo');
-    if($zcmail->{error})(
-        print "Error!";
+    if($zcmail->error)(
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     )
 
 =cut
@@ -380,16 +416,22 @@ This connects Mail::POP3Client connection to a POP3 account.
 sub connectPOP3{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='connectPOP3';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail connectPOP3:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	#No need to verify the account exists as $self->getsAccountArgs will do that.
@@ -401,11 +443,10 @@ sub connectPOP3{
 	my $requiredInt=0;
 	while (defined($self->{required}{$split[0]}[$requiredInt])) {
 		if (!defined($avars{$self->{required}{pop3}[$requiredInt]})) {
-			warn('ZConf-Mail connectPOP3:32: "'.$self->{required}{$split[0]}[$requiredInt].
-				 '" is undefined for the account "'.$account.'"');
 			$self->{error}=32;
 			$self->{errorString}='"'.$self->{required}{$split[0]}[$requiredInt].
 			                     '" is undefined for the account "'.$account.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$requiredInt++;
@@ -422,26 +463,21 @@ sub connectPOP3{
 
 	#If the state is equal to authorization it means we did not authenticate properly.
 	if ($pop->State eq 'AUTHORIZATION') {
-		warn('ZConf-Mail connectPOP3:7: Failed to authenticate with the server.'.
-			 ' Mail::POP3Client->State="'.$pop->State.'"'.
-			 ' Mail::POP3Client->Message returned "'.$pop->Message.'"');
 		$self->{error}=7;
 		$self->{errorString}='Failed to authenticate with the server.'.
                    			 ' Mail::POP3Client->State="'.$pop->State.'"'.
 		                     ' Mail::POP3Client->Message returned "'.$pop->Message.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#If the state is it means it failed to connect to the server.
 	if ($pop->State eq 'DEAD') {
-		warn('ZConf-Mail connectPOP3:8: Failed to connect to the server.'.
-			 ' Mail::POP3Client->State="'.$pop->State.'"'.
-			 ' Mail::POP3Client->Message="'.$pop->Message.'"');
 		$self->{error}=8;
 		$self->{errorString}='Failed to connect to the server.'.
                    			 ' Mail::POP3Client->State="'.$pop->State.'"'.
 		                     ' Mail::POP3Client->Message returned "'.$pop->Message.'"';
-		return undef;
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	return $pop;
@@ -453,8 +489,8 @@ This connects Mail::POP3Client connection to a POP3 account.
 
     #connects to the SMTP account 'smtp/foo'
     my $imap=$zcmail->connectSMTP('smtp/foo');
-    if($zcmail->{error})(
-        print "Error!";
+    if($zcmail->error)(
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     )
 
 =cut
@@ -462,16 +498,23 @@ This connects Mail::POP3Client connection to a POP3 account.
 sub connectSMTP{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='connectSMTP';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail connectSMTP:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#No need to verify the account exists as $self->getsAccountArgs will do that.
@@ -483,11 +526,10 @@ sub connectSMTP{
 	my $requiredInt=0;
 	while (defined($self->{required}{$split[0]}[$requiredInt])) {
 		if (!defined($avars{$self->{required}{smtp}[$requiredInt]})) {
-			warn('ZConf-Mail connectSMTP:32: "'.$self->{required}{$split[0]}[$requiredInt].
-				 '" is undefined for the account "'.$account.'"');
 			$self->{error}=32;
 			$self->{errorString}='"'.$self->{required}{$split[0]}[$requiredInt].
 			                     '" is undefined for the account "'.$account.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$requiredInt++;
@@ -506,9 +548,9 @@ sub connectSMTP{
 									 Password=>$avars{pass},
 									 Timeout=>$avars{timeout});
 		if (!$smtp) {
-			warn('ZConf-Mail connectSMTP:13: Failed to connect to SMTP server or authenticate');
 			$self->{error}=13;
 			$self->{errorString}='Failed to connect to SMTP server';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}else {
@@ -516,28 +558,27 @@ sub connectSMTP{
 
 		#error it it did not connect
 		if (!defined($smtp)) {
-			warn('ZConf-Mail connectSMTP:10: Failed to connect to SMTP server, "'
-				 .$avars{server}.':'.$avars{port}.'"');
 			$self->{error}=10;
 			$self->{errorString}='Failed to connect to SMTP server, "'
 			                     .$avars{server}.':'.$avars{port}.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
 		#authenticate and error if it does not
 		if (!$smtp->auth($avars{auth}, $avars{user}, $avars{pass})){
-			warn('ZConf-Mail connectSMTP:11: Failed to authenticate with the SMTP server');
 			$self->{error}=11;
 			$self->{errorString}='Failed to authenticate with the SMTP server.';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}
 
 	#sends the from information
 	if (!$smtp->mail($avars{from})){
-		warn('ZConf-Mail connectSMTP:12: Failed to connect to SMTP server');
 		$self->{error}=12;
 		$self->{errorString}='Failed to connect to SMTP server';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef
 	}
 
@@ -580,7 +621,10 @@ Thus for the account 'pop3/some account name' it will be 'some account name'.
                             deliverTo=>'',
                             fetchable=>'0',
                             server=>'127.0.0.1',
-                            })
+                            });
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
+    }
 
 =cut
 
@@ -590,30 +634,36 @@ sub createAccount{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='createAccount';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#make sure the type is defined
 	if (!defined($args{type})) {
-		warn('ZConf-Mail createAccount:2: $args{type} is undefined');
 		$self->{error}='2';
 		$self->{errorString}='$args{type} is undefined';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#make sure it is a known type
 	if (!defined($self->{required}{$args{type}})) {
-		warn('ZConf-Mail createAccount:3: $args{type}, "'.$args{type}.'", not a valid value');
 		$self->{error}='3';
 		$self->{errorString}='$args{type}, "'.$args{type}.'", not a valid value';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#make sure it is a legit account name
 	if (!$self->{zconf}->setNameLegit($args{account})){
-		warn('ZConf-Mail createAccount:4: $args{account}, "'.$args{account}.'", not a legit account name');
 		$self->{error}='3';
 		$self->{errorString}='$args{account}, "'.$args{account}.'", not a legit account name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -622,9 +672,9 @@ sub createAccount{
 	while (defined($self->{required}{$args{type}}[$requiredInt])) {
 		#make sure it is defined
 		if (!defined($args{$self->{required}{$args{type}}[$requiredInt]})) {
-			warn('ZConf-Mail createAccount:4: $args{'.$self->{required}{$args{type}}[$requiredInt].' is not defined');
 			$self->{error}='3';
 			$self->{errorString}='$args{'.$self->{required}{$args{type}}[$requiredInt].' is not defined';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
@@ -646,9 +696,9 @@ sub createAccount{
 	#saves it
 	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-Mail createAccount:36: ZConf failed to write the set out');
 		$self->{error}=36;
 		$self->{errorString}='ZConf failed to write the set out.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -690,8 +740,15 @@ sub createEmailSimple{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='createEmailSimple';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
+
 
 	if (!defined($args{account})) {
 		$args{account}=$self->defaultSendableGet;
@@ -699,15 +756,15 @@ sub createEmailSimple{
 
 	#makes sure the args for the account, subject, and body are defined
 	if (!defined($args{account}) || (!defined($args{subject}) || !defined($args{body}))) {
-		warn('ZConf-Mail createEmailSimple:5: A required hash arguement was not defined' );
 		$self->{error}='5';
 		$self->{errorString}='A required hash arguement was not defined.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	my %Aargs=$self->getAccountArgs($args{account});
 	if ($self->{error}) {
-		warn('ZConf-Mail createEmailSimpe: getAccountArgs errors');
+		warn('ZConf-Mail createEmailSimple: getAccountArgs errors');
 		return undef;
 	}
 	
@@ -722,9 +779,9 @@ sub createEmailSimple{
 	my $mail=Email::Simple->create(header=>[Subject=>$args{subject}], body=>$args{body});
 
 	if (!$mail) {
-		warn('ZConf-Mail createEmailSimple:31: Failed to create an Email::Simple object');
 		$self->{error}=31;
 		$self->{errorString}='Failed to create an Email::Simple object.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -755,7 +812,9 @@ sub createEmailSimple{
 
 This create a new MIME::Lite object.
 
-=head3 function args
+This will also sign it if needed be.
+
+=head3 args hash reference
 
 The three following are required.
 
@@ -792,6 +851,16 @@ An array of files to attach.
 
 This will set the in-reply-to header value.
 
+=head4 dontSign
+
+If is set to true and the account is set to sign by default, it won't be.
+
+=head4 quiet
+
+When created, call the quiet method.
+
+This defaults to on as it will throw errors when doing GPG signing.
+
 =cut
 
 sub createMimeLite{
@@ -800,8 +869,14 @@ sub createMimeLite{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='createMimeLite';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	if (!defined($args{account})) {
 		$args{account}=$self->defaultSendableGet;
@@ -809,26 +884,37 @@ sub createMimeLite{
 
 	#makes sure the args for the account, subject, and body are defined
 	if (!defined($args{account}) || (!defined($args{subject}) || !defined($args{body}))) {
-		warn('ZConf-Mail createMimeLite:5: A required hash arguement was not defined' );
 		$self->{error}='5';
 		$self->{errorString}='A required hash arguement was not defined.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	my %Aargs=$self->getAccountArgs($args{account});
 	if ($self->{error}) {
-		warn('ZConf-Mail createEmailSimpe: getAccountArgs errors');
+		warn('ZConf-Mail createMimeLite: getAccountArgs errors');
 		return undef;
+	}
+
+	#shut the damn thing up if not told otherwise
+	if (!defined($args{quiet})) {
+		$args{quiet}=1;
 	}
 
 	#makes sure that either to or cc is given
 	if (!defined($args{cc}[0]) && !defined($args{to}[0])) {
-		warn('ZConf-Mail createEmailMime:5: Neither to or cc given' );
 		$self->{error}=5;
 		$self->{errorString}='Neither to or cc given.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
+	#don't sign it if requested not to
+	if (defined($args{dontSign}) &&  $args{dontSign}) {
+		$Aargs{usePGP}=0;
+	}
+
+	#sign the message if needed
 	my $signed;
 	if ($Aargs{usePGP}) {
 		my $to='';
@@ -852,11 +938,17 @@ sub createMimeLite{
 	if ($Aargs{usePGP}) {
 		if ($Aargs{pgpType} eq 'clearsign') {
 			$email=MIME::Lite->new(Type=>'multipart/signed');
+			if ($args{quiet}) {
+				$email->quiet;
+			}
 			$email->attach('Content-Type'=>'text/plain', Data=>$signed);
 		}
 
 		if ($Aargs{pgpType} eq 'mimesign') {
 			$email=MIME::Lite->new(Type=>'multipart/signed');
+			if ($args{quiet}) {
+				$email->quiet;
+			}
 
 			$email->attr('content-type.protocol'=>'application/pgp-signature');
 
@@ -882,12 +974,15 @@ sub createMimeLite{
 			$email->attr('content-type'=>'multipart/encrypted');
 			$email->attr('content-type.protocol'=>'application/pgp-encrypted');
 			$email->attach('Content-Type'=>'application/pgp-encrypted',
-						ata=>"Version: 1.0\n");
+						Data=>"Version: 1.0\n");
 			$email->attach('Content-Type'=>'application/octet-stream',
 						   Data=>$signed);
 		}
 	}else {
 		$email=MIME::Lite->new(Data=>$args{body});
+		if ($args{quiet}) {
+			$email->quiet;
+		}
 	}
 
 	#process the to stuff
@@ -918,9 +1013,9 @@ sub createMimeLite{
 	my $int=0;
 	while ($args{files}[$int]) {
 		if (! -e $args{files}[$int]) {
-			warn('ZConf-Mail createEmailMime:38: "'.$args{files}[0].'" does not exist');
 			$self->{error}=38;
 			$self->{errorString}='"'.$args{files}[0].'" does not exist';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
@@ -949,7 +1044,14 @@ This sets the default sendable email address.
 
 sub defaultFetchableGet{
 	my $self=$_[0];
+	my $method='defaultFetchableGet';
+
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	my %var=$self->{zconf}->regexVarGet('mail', '^default/fetchable$');
 
@@ -969,8 +1071,8 @@ sub defaultFetchableGet{
 This sets the default fetchable account.
 
     $zcmail->defaultFechableSet('smtp/foo');
-    if($zcmail->{error}){
-        print "Error!\n";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -978,14 +1080,19 @@ This sets the default fetchable account.
 sub defaultFetchableSet{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='defaultFetchableSet';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+	}
 
 	#make sure we have a account
 	if (!defined($account)) {
 		$self->{errorString}='No account specified.';
 		$self->{error}='5';
-		warn('ZConf-Mail defaultFetchableSet:5: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 	
@@ -1011,7 +1118,7 @@ sub defaultFetchableSet{
 	if ($self->{zconf}->{error}) {
 		$self->{errorString}='ZConf failed to write the set out.';
 		$self->{error}=36;
-		warn('ZConf-Mail defaultFetchableSet:36: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1033,7 +1140,14 @@ This sets the default sendable email account.
 
 sub defaultSendableGet{
 	my $self=$_[0];
+	my $method='defaultSendableGet';
+
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	my %var=$self->{zconf}->regexVarGet('mail', '^default/sendable$');
 
@@ -1053,8 +1167,8 @@ sub defaultSendableGet{
 This sets the default sendable email address.
 
     $zcmail->defaultSendableSet('smtp/foo');
-    if($zcmail->{error}){
-        print "Error!\n";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -1062,14 +1176,20 @@ This sets the default sendable email address.
 sub defaultSendableSet{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='defaultSendableSet';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#make sure we have a account
 	if (!defined($account)) {
 		$self->{errorString}='Account not specified.';
 		$self->{error}='5';
-		warn('ZConf-Mail defaultSendableSet:5: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 	
@@ -1082,7 +1202,7 @@ sub defaultSendableSet{
 	if (!$sendable) {
 		$self->{error}=24;
 		$self->{errorString}='The account, "'.$account.'", is not sendable.';
-		warn('ZConf-Mail defaultSendableSet:24: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1095,7 +1215,7 @@ sub defaultSendableSet{
 	if ($self->{zconf}->{error}) {
 		$self->{errorString}='ZConf failed to write the set out.';
 		$self->{error}=36;
-		warn('ZConf-Mail defaultSendableSet:36: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1110,7 +1230,14 @@ This gets what the default IMAP account is.
 
 sub defaultImapGet{
 	my $self=$_[0];
+	my $method='defaultImapGet';
+
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	my %var=$self->{zconf}->regexVarGet('mail', '^default/imap$');
 
@@ -1134,14 +1261,20 @@ This gets what the default IMAP account is.
 sub defaultImapSet{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='defaultImapSet';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#make sure we have a account
 	if (!defined($account)) {
 		$self->{errorString}='Account not specified.';
 		$self->{error}='5';
-		warn('ZConf-Mail defaultImapSet:5: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 	
@@ -1160,7 +1293,7 @@ sub defaultImapSet{
 	if ($self->{zconf}->{error}) {
 		$self->{errorString}='ZConf failed to write the set out.';
 		$self->{error}=36;
-		warn('ZConf-Mail defaultImapSet:36: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1173,8 +1306,8 @@ This is used for removed a account. One option is taken and that is the name of 
 
    #removes the account 'mbox/foo'
    $zcmail->delAccount('mbox/foo');
-   if($zcmail->{error}){
-       print "ERROR!";
+   if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
    }
 
 =cut
@@ -1182,24 +1315,32 @@ This is used for removed a account. One option is taken and that is the name of 
 sub delAccount{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='delAccount';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that. It also makes sure that
 	#nothing past the account name is refered to.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail delAccount:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#makes sure the account exists
 	if (!$self->accountExists($account)) {
-		warn('Zconf-Mail delAccount:6: "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='"'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#removes the variables
@@ -1209,9 +1350,9 @@ sub delAccount{
 	#saves it
 	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-Mail delAccount:36: ZConf failed to write the set out');
 		$self->{error}=36;
 		$self->{errorString}='ZConf failed to write the set out.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1232,24 +1373,32 @@ This checks if a acocunt is deliverable or not.
 sub deliverable{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='deliverable';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that. It also makes sure that
 	#nothing past the account name is refered to.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail deliverable:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#makes sure the account exists
 	if (!$self->accountExists($account)) {
-		warn('ZConf-Mail deliverable:6: The account "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='The account "'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#checks to make sure that is a account type that is deliverable
@@ -1285,14 +1434,14 @@ Currently this is only used by IMAP.
 
     #delivers the mail contained in $mail to 'exec/foo'
     $zcmail->deliver('exec/foo', $mail);
-    if($zcmail->{error}){
-        print "deliver error";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
     #delivers the mail contained in $mail to 'imap/foo' to the 'foo.bar'
     $zcmail->deliver('imap/foo', $mail, {folder=>'foo.bar'});
-    if($zcmail->{error}){
-        print "deliver error";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -1305,14 +1454,20 @@ sub deliver{
 	if(defined($_[3])){
 		%args= %{$_[3]};
 	}
+	my $method='deliver';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#makes sure the account can be delivered to
 	if (!$self->deliverable($account)) {
-		warn('ZConf-Mail deliver:15: "'.$account.'" is not deliverable');
 		$self->{error}='15';
 		$self->{errorString}='"'.$account.'" is not deliverable';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1327,7 +1482,7 @@ sub deliver{
 	#delivers it to a imap account
 	if ($account =~ /^imap\//) {
 		if (!$self->deliverIMAP($account, $mail, \%args)) {
-			warn('ZConf-Mail deliver:'.$self->{error}.': '.$self->{errorString});
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}
@@ -1347,8 +1502,8 @@ third is the a optional args hash.
 
     #delivers the mail contained in $mail to 'exec/foo'
     $zcmail->deliverExec('exec/foo', $mail);
-    if($zcmail->{error}){
-        print "deliver error";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -1357,22 +1512,28 @@ sub deliverExec{
 	my $self=$_[0];
 	my $account=$_[1];
 	my $mail=$_[2];
+	my $method='deliverExec';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#delivers it to a exec account
 	if (!$account =~ /^exec\//) {
-		warn('ZConf-Mail deliverExec:19: "'.$account.'" is not a exec account');
 		$self->{error}=19;
 		$self->{errorString}='"'.$account.'" is not a exec account';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#Make sure the command is defined.
 	if (!defined($self->{zconf}->{conf}{mail}{'accounts/'.$account.'/deliver'})) {
-		warn('ZConf-Mail deliverExec:5: "'.$account.'" is missing the variable "deliver"');
 		$self->{error}=5;
 		$self->{errorString}='"'.$account.'" is missing the variable "deliver"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;		
 	}
 
@@ -1380,26 +1541,22 @@ sub deliverExec{
 	my $pipe=IO::MultiPipe->new;
 	$pipe->set($self->{zconf}->{conf}{mail}{'accounts/'.$account.'/deliver'});
 	if ($pipe->{error}) {
-		warn('ZConf-Mail deliverExec:20: IO::MultiPipe errored. $pipe->{error}="'
-			 .$pipe->{error}.'" $pipe->{errorString}="'
-			 .$pipe->{errorString}.'"');
 		$self->{error}=20;
 		$self->{errorString}='O::MultiPipe errored. $pipe->{error}="'
 		                     .$pipe->{error}.'" $pipe->{errorString}="'
 							 .$pipe->{errorString}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#runs it
 	$pipe->run($mail);
 	if ($pipe->{error}) {
-		warn('ZConf-Mail deliverExec:20: IO::MultiPipe errored. $pipe->{error}="'
-			 .$pipe->{error}.'" $pipe->{errorString}="'
-			 .$pipe->{errorString}.'"');
 		$self->{error}=20;
 		$self->{errorString}='O::MultiPipe errored. $pipe->{error}="'
 		                     .$pipe->{error}.'" $pipe->{errorString}="'
 							 .$pipe->{errorString}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1415,14 +1572,14 @@ function route it. This allows for more flexible delivery.
 
     #delivers the mail contained in $mail to 'imap/foo' to the inbox
     $zcmail->deliverIMAP('imap/foo', $mail);
-    if($zcmail->{error}){
-        print "deliver error";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
     #delivers the mail contained in $mail to 'imap/foo' to the 'foo.bar'
     $zcmail->deliverIMAP('imap/foo', $mail, {folder=>'foo.bar'});
     if($zcmail->{error}){
-        print "deliver error";
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -1435,8 +1592,22 @@ sub deliverIMAP{
 	if(defined($_[3])){
 		%args= %{$_[3]};
 	}
+	my $method='deliverIMAP';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
+
+	#delivers it to a exec account
+	if (!$account =~ /^imap\//) {
+		$self->{error}=19;
+		$self->{errorString}='"'.$account.'" is not a IMAP account';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
+	}
 
 	#connects to the IMAP server
 	my $imap=$self->connectIMAP($account);
@@ -1445,21 +1616,13 @@ sub deliverIMAP{
 		return undef;
 	}
 
-	#delivers it to a exec account
-	if (!$account =~ /^IMAP\//) {
-		warn('ZConf-Mail deliverIMAP:19: "'.$account.'" is not a IMAP account');
-		$self->{error}=19;
-		$self->{errorString}='"'.$account.'" is not a IMAP account';
-		return undef;
-	}
-
-	#
+	#make sure we have a folder
 	if (!defined($args{folder})) {
 		#Make sure the command is defined.
 		if (!defined($self->{zconf}->{conf}{mail}{'accounts/'.$account.'/inbox'})) {
-			warn('ZConf-Mail deliverIMAP:33: "'.$account.'" is missing the variable "inbox"');
 			$self->{error}=33;
 			$self->{errorString}='"'.$account.'" is missing the variable "inbox"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;		
 		}
 		
@@ -1469,21 +1632,19 @@ sub deliverIMAP{
 	#make sure the folder exists
 	my $select=$imap->select($args{folder});
 	if (!$select) {
-		warn('ZConf-Mail deliverIMAP:34: Failed to select folder "'.$args{folder}.
-			 '" for account "'.$account.'"');
 		$self->{error}=34;
 		$self->{errorString}='Failed to select folder "'.$args{folder}.
 		                     '"for account "'.$account.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	my $append=$imap->append($args{folder}, ['Literal', $mail]);
 	if (!$append) {
-		warn('ZConf-Mail deliverIMAP:34: Failed to append to folder "'.$args{folder}.
-			 '"for account "'.$account.'"');
 		$self->{error}=35;
 		$self->{errorString}='Failed to append to folder "'.$args{folder}.
 		                     '"for account "'.$account.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1500,8 +1661,8 @@ the account.
 
     #fetches the mail for 'pop3/foo'
     $zcmail->fetch('pop3/foo');
-    if($zcmail->{error}){
-        print "error";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -1509,8 +1670,14 @@ the account.
 sub fetch{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='fetch';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#gets the default fetchable account if no account is given
 	if (!defined($account)) {
@@ -1522,14 +1689,14 @@ sub fetch{
 	if (!defined($account)) {
 		$self->{error}=5;
 		$self->{errorString}='No account specified and there is no default fetchable account.';
-		warn('ZConf-Mail fetch:5: '.$self->{errorString});
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	if (!$self->fetchable($account)) {
-		warn('ZConf-Mail fetch:15: "'.$account.'" is not fetchable');
 		$self->{error}='15';
 		$self->{errorString}='"'.$account.'" is not fetchable';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1540,7 +1707,7 @@ sub fetch{
 	if ($account =~ /^pop3\//) {
 	    $fetched=$self->fetchPOP3($account);
 		if (!defined($fetched)) {
-			warn('ZConf-Mail fetch:'.$self->{error}.': '.$self->{errorString});
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}
@@ -1558,7 +1725,7 @@ sub fetch{
 	if ($account =~ /^maildir\//) {
 	    $fetched=$self->fetchMaildir($account);
 		if (!defined($fetched)) {
-			warn('ZConf-Mail fetch:'.$self->{error}.': '.$self->{errorString});
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}
@@ -1567,7 +1734,7 @@ sub fetch{
 	if ($account =~ /^imap\//) {
 	    $fetched=$self->fetchIMAP($account);
 		if (!defined($fetched)) {
-			warn('ZConf-Mail fetch:'.$self->{error}.': '.$self->{errorString});
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}
@@ -1585,25 +1752,31 @@ to make some things look neater.
 sub fetchable{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='fetchable';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that. It also makes sure that
 	#nothing past the account name is refered to.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail fetchable:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#makes sure the account exists
 	if (!$self->accountExists($account)) {
-		warn('ZConf-Mail fetchable:6: The account "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='The account "'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1626,8 +1799,8 @@ sub fetchable{
 Fetches the messages from the inbox of a IMAP account.
 
     my $number=$mail->fetchIMAP('imap/foo');
-    if($mail->{error}}){
-        print "Error!";
+    if($mail->error}){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }else{
         print 'Fetched '.$number."messages.\n";
     }
@@ -1637,38 +1810,45 @@ Fetches the messages from the inbox of a IMAP account.
 sub fetchIMAP{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='fetchIMAP';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#makes sure it is fetchable
 	if (!$self->fetchable($account)) {
-		warn('ZConf-Mail fetchIMAP:15: "'.$account.'" is not fetchable');
 		$self->{error}='15';
 		$self->{errorString}='"'.$account.'" is not fetchable';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#returns
 	if (!defined($self->{zconf}->{conf}{mail}{'accounts/'.$account.'/inbox'})) {
-		warn('ZConf-Mail fetchIMAP:5: No IMAP inbox defined');
 		$self->{error}=5;
 		$self->{errorString}='No IMAP inbox defined';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#connects to the IMAP server
 	my $imap=$self->connectIMAP($account);
 	if ($self->{error}) {
-		warn('ZConf-Mail fetchIMAP:22: Failed to connect to the IMAP server.');
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#selects the proper folder
 	if (!$imap->select($self->{zconf}->{conf}{mail}{'accounts/'.$account.'/inbox'})) {
 #	if (!$imap->select('Inbox')) {
-		warn('ZConf-Mail fetchIMAP:23: Failed to select IMAP folder "'.
-			 $self->{zconf}->{conf}{mail}{'accounts/'.$account.'/inbox'}.'"');
 		$self->{error}=23;
 		$self->{errorString}='Failed to select IMAP folder "'.
 		    $self->{zconf}->{conf}{mail}{'accounts/'.$account.'/inbox'}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1696,9 +1876,9 @@ sub fetchIMAP{
 
 		#removes the old one
 		if (!$imap->store($countInt, , '+flags', '(\\deleted)')) {
-			warn('ZConf-Mail fetchMbox:21: $mbox->message('.$countInt.')->delete failed');
 			$self->{error}=21;
 			$self->{errorString}='$mbox->message('.$countInt.')->delete failed';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$imap->expunge();
@@ -1715,7 +1895,7 @@ Fetches the messages from the inbox of a maildir account.
 
     my $number=$mail->fetchMaildir('maildir/foo');
     if($mail->{error}}){
-        print "Error!";
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }else{
         print 'Fetched '.$number."messages.\n";
     }
@@ -1725,12 +1905,20 @@ Fetches the messages from the inbox of a maildir account.
 sub fetchMaildir{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='fetchMaildir';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#makes sure it is fetchable
 	if (!$self->fetchable($account)) {
-		warn('ZConf-Mail fetchMaildir:15: "'.$account.'" is not fetchable');
 		$self->{error}='15';
 		$self->{errorString}='"'.$account.'" is not fetchable';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1751,9 +1939,9 @@ sub fetchMaildir{
 	while ($countInt < $count && $count > 0) {
 		my $mail=$maildir->message($countInt)->string;
 		if ($?) {
-			warn('ZConf-Mail fetchMbox:22: $mbox->message('.$countInt.')->print failed');
 			$self->{error}=22;
 			$self->{errorString}='$mbox->message('.$countInt.')->print failed';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
@@ -1767,9 +1955,9 @@ sub fetchMaildir{
 
 		#removes the old one
 		if (!$maildir->message($countInt)->delete) {
-			warn('ZConf-Mail fetchMbox:21: $mbox->message('.$countInt.')->delete failed');
 			$self->{error}=21;
 			$self->{errorString}='$mbox->message('.$countInt.')->delete failed';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		
@@ -1785,7 +1973,7 @@ Fetches the messages from the inbox of a mbox account.
 
     my $number=$mail->fetchMbox('mbox/foo');
     if($mail->{error}}){
-        print "Error!";
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }else{
         print 'Fetched '.$number."messages.\n";
     }
@@ -1795,12 +1983,20 @@ Fetches the messages from the inbox of a mbox account.
 sub fetchMbox{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='fetchMbox';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#makes sure it is fetchable
 	if (!$self->fetchable($account)) {
-		warn('ZConf-Mail fetchMbox:15: "'.$account.'" is not fetchable');
 		$self->{error}='15';
 		$self->{errorString}='"'.$account.'" is not fetchable';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1822,9 +2018,9 @@ sub fetchMbox{
 
 		my $mail=$mbox->message($countInt)->string;
 		if ($?) {
-			warn('ZConf-Mail fetchMbox:22: $mbox->message('.$countInt.')->print failed');
 			$self->{error}=22;
 			$self->{errorString}='$mbox->message('.$countInt.')->print failed';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
@@ -1838,9 +2034,9 @@ sub fetchMbox{
 
 		#removes the old one
 		if (!$mbox->message($countInt)->delete) {
-			warn('ZConf-Mail fetchMbox:21: $mbox->message('.$countInt.')->delete failed');
 			$self->{error}=21;
 			$self->{errorString}='$mbox->message('.$countInt.')->delete failed';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		
@@ -1856,7 +2052,7 @@ Fetches the messages from the inbox of a POP3 account.
 
     my $number=$mail->fetchPOP3('pop3/foo');
     if($mail->{error}}){
-        print "Error!";
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }else{
         print 'Fetched '.$number."messages.\n";
     }
@@ -1866,12 +2062,20 @@ Fetches the messages from the inbox of a POP3 account.
 sub fetchPOP3{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='fetchPOP3';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#makes sure it is fetchable
 	if (!$self->fetchable($account)) {
-		warn('ZConf-Mail fetchPOP3:15: "'.$account.'" is not fetchable');
 		$self->{error}='15';
 		$self->{errorString}='"'.$account.'" is not fetchable';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -1889,9 +2093,9 @@ sub fetchPOP3{
 
 		my $mail=$pop->Retrieve($countInt);
 		if ($?) {
-			warn('ZConf-Mail fetchPOP3:17: $pop->Retrieve failed. $?="'.$?.'"');
 			$self->{error}=17;
 			$self->{errorString}='$pop->Retrieve failed. $?="'.$?.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
@@ -1906,9 +2110,9 @@ sub fetchPOP3{
 
 		#removes the old one
 		if (!$pop->Delete($countInt)) {
-			warn('ZConf-Mail fetchPOP3:17: $pop->Delete failed. $?="'.$?.'"');
 			$self->{error}=17;
 			$self->{errorString}='$pop->Delete failed. $?="'.$?.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
@@ -1924,11 +2128,24 @@ sub fetchPOP3{
 Automatically format a chunk of text against various settings,
 primarily line wrapping.
 
+    $text=$zcmail->formatter($text);
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
+    }
+
 =cut
 
 sub formatter{
 	my $self=$_[0];
 	my $text=$_[1];
+	my $method='formatter';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	my %f=$self->{zconf}->regexVarGet('mail', '^formatter/');
 
@@ -1968,24 +2185,184 @@ sub formatter{
 	return $text;
 }
 
-=head2 formatterGet
+=head2 formatterGetAll
 
-Get an option for the formatter.
+Get all options for the formatter.
+
+    my %formatterOptions=$zcmail->formatterGetAll;
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
+    }else{
+          print 'marginLeft:'.formatterOptions{marginLeft}."\n".
+                'marginRight:'.formatterOptions{marginRight}."\n".
+                'squeeze:'.formatterOptions{squeeze}."\n".
+                'ignore:'.formatterOptions{ignore}."\n".
+                'justify:'.formatterOptions{justify}."\n".
+                'tabspace:'.formatterOptions{tabspace}."\n";
+    }
 
 =cut
 
-sub formatterGet{
+sub formatterGetAll{
+	my $self=$_[0];
+	my $method='formatterGet';
 
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
+
+	#gets all formatter variables that are defined
+	my %returned=$self->{zconf}->regexVarSearch('mail', '^formatter\/');
+	if ($self->{zconf}->error) {
+		$self->{error}=36;
+		$self->{errorString}='ZConf errored. error='.$self->{zconf}->error.' errorString='.$self->{zconf}->errorString;
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
+	}
+
+	#this will be returned
+	my %toreturn;
+
+	#handle the marginLeft value
+	if (defined( $returned{'formatter/marginLeft'} )) {
+		$toreturn{'marginLeft'}=$returned{'formatter/marginLeft'};
+	}else {
+		$toreturn{'marginLeft'}=0;		
+	}
+
+	#handle the marginRight value
+	if (defined( $returned{'formatter/marginRight'} )) {
+		$toreturn{'marginRight'}=$returned{'formatter/marginRight'};
+	}else {
+		$toreturn{'marginRight'}=72;
+	}
+
+	#handle the squeeze value
+	if (defined( $returned{'formatter/squeeze'} )) {
+		$toreturn{'squeeze'}=$returned{'formatter/squeeze'};
+	}else {
+		$toreturn{'squeeze'}=1;
+	}
+
+	#handle the ignore value
+	if (defined( $returned{'formatter/ignore'} )) {
+		$toreturn{'ignore'}=$returned{'formatter/ignore'};
+	}else {
+		$toreturn{'ignore'}='^[ \t]';
+	}
+
+	#handle the justify value
+	if (defined( $returned{'formatter/justify'} )) {
+		$toreturn{'justify'}=$returned{'formatter/justify'};
+	}else {
+		$toreturn{'justify'}='left';
+	}
+
+	#handle the justify value
+	if (defined( $returned{'formatter/tabspace'} )) {
+		$toreturn{'tabspace'}=$returned{'formatter/tabspace'};
+	}else {
+		$toreturn{'tabspace'}='4';
+	}
+
+	return %toreturn;
 }
 
 =head2 formatterSet
 
 Set some options for the formatter.
 
+Two arguments are required.
+
+The first is the option to operate on.
+
+The second is the value. A value of undef will result it being removed,
+there for the default being used when formatterGetAll is called.
+
+    #set the text justification to the right
+    $zcmail->formatterSet('justify', 'right');
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
+    }
+
+    #set the text justification back to the default
+    $zcmail->formatterSet('justify', undef);
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
+    }
+
 =cut
 
 sub formatterSet{
+	my $self=$_[0];
+	my $option=$_[1];
+	my $value=$_[2];
+	my $method='formatterGet';
 
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
+
+	#make sure a option is specified
+	if (!defined( $option )) {
+		$self->{error}=5;
+		$self->{errorString}='No option specified';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
+	}
+
+	#makes sure it is a valid option
+	my $int=0;
+	my $matched=0;
+	while (defined( $self->{legal}{formatter}[$int] )) {
+		if ($self->{legal}{formatter}[$int] eq $option) {
+			$matched=1;
+		}
+
+		$int++;
+	}
+	if (!$matched) {
+		$self->{error}=45;
+		$self->{errorString}='"'.$option.'" is not a valid formatter option';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
+	}
+
+	#decides what to do with it
+	if (!defined($value)) {
+		$self->{zconf}->regexVarDel('mail', '^formatter\/'.$option.'$');
+		if ($self->{zconf}->error) {
+			$self->{errorString}='ZConf error. error='.$self->{zconf}->error.' errorString='.$self->{zconf}->errorString;
+			$self->{error}=36;
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+			return undef;
+		}
+	}else {
+		$self->{zconf}->setVar('mail', 'formatter/'.$option, $value);
+		if ($self->{zconf}->error) {
+			$self->{errorString}='ZConf error. error='.$self->{zconf}->error.' errorString='.$self->{zconf}->errorString;
+			$self->{error}=36;
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+			return undef;
+		}
+	}
+
+	#saves it
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
+	if ($self->{zconf}->error) {
+		$self->{errorString}='ZConf failed to write the set out.';
+		$self->{error}=36;
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
+	}
+
+	return 1;
 }
 
 =head2 getAccounts
@@ -1993,14 +2370,22 @@ sub formatterSet{
 Gets a array of the various accounts.
 
     my @accounts=$zcmail->getAccounts;
-    if($zcmail->{error}){
-        print 'error';
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
 
 sub getAccounts{
 	my $self=$_[0];
+	my $method='getAccounts';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#searches the mail config for any thing under 'acounts/'
 	my @matched=$self->{zconf}->regexVarSearch('mail', '^accounts/');
@@ -2031,8 +2416,8 @@ One arguement is required and that is the account name.
 
     #get the account args for 'pop3/foo'
     my %args=$zcmail->getAccountArgs('pop3/foo');
-    if($zcmail->{error}){
-        print "error!\n";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -2040,24 +2425,32 @@ One arguement is required and that is the account name.
 sub getAccountArgs{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='getAccountArgs';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that. It also makes sure that
 	#nothing past the account name is refered to.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail getAccountArgs:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#
 	if (!$self->accountExists($account)) {
-		warn('ZConf-Mail getAccountArgs:6: The account "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='The account "'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#gets the variables for the account.
@@ -2087,24 +2480,30 @@ sub getAccountArgs{
 This gets what the current set is.
 
     my $set=$zcmail->getSet;
-    if($zcmail->{error}){
-        print "Error!\n";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
 
 sub getSet{
 	my $self=$_[0];
+	my $method='getSet';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	my $set=$self->{zconf}->getSet('mail');
 	if($self->{zconf}->{error}){
-		warn('ZConf-Mail getSet:2: ZConf error getting the loaded set the config "mail".'.
-			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
-			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf error getting the loaded set the config "mail".'.
 			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
 			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2116,8 +2515,8 @@ sub getSet{
 This is used for initiating the config used by ZConf.
 
     $zcmail->init;
-    if($zcmail->{error}){
-        print 'error';
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -2128,19 +2527,23 @@ sub init{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='init';
 
-	$self->errorBlank();
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#creates the config if needed
 	if (!$self->{zconf}->configExists("mail")){
 		if ($self->{zconf}->createConfig('mail')){
-			warn('ZConf-Mail init:1: Could not create the config. $self->{zconf}->{error}="'.
-				 $self->{zconf}->{error}.'" $self->{zconf}->{errorString}="'.
-				 $self->{zconf}->{errorString}.'"');
 			$self->{error}=8;
 			$self->{errorString}='Could not create the config. $self->{zconf}->{error}="'.
 			    $self->{zconf}->{error}.'" $self->{zconf}->{errorString}="'.
 			    $self->{zconf}->{errorString}.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 	}
@@ -2153,27 +2556,30 @@ sub init{
 This lists the available sets.
 
     my @sets=$zcmail->listSets;
-    if($zcmail->{error}){
-        print "Error!";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
 
 sub listSets{
 	my $self=$_[0];
+	my $method='listSets';
 
 	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	my @sets=$self->{zconf}->getAvailableSets('mail');
 	if($self->{zconf}->{error}){
-		warn('ZConf-Mail listSets:2: ZConf error listing sets for the config "mail".'.
-			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
-			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf error listing sets for the config "mail".'.
 			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
 			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2207,31 +2613,36 @@ sub modAccount{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='modAccount';
 
 	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#make sure the type is defined
 	if (!defined($args{type})) {
-		warn('ZConf-Mail createAccount:2: $args{type} is undefined');
 		$self->{error}='2';
 		$self->{errorString}='$args{type} is undefined';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#make sure it is a known type
 	if (!defined($self->{legal}{$args{type}})) {
-		warn('ZConf-Mail modAccount:3: $args{type}, "'.$args{type}.'", not a valid type');
 		$self->{error}='3';
 		$self->{errorString}='$args{type}, "'.$args{type}.'", not a valid value';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#make sure it is a legit account name
 	if (!$self->{zconf}->setNameLegit($args{account})){
-		warn('ZConf-Mail modAccount:4: $args{account}, "'.$args{account}.'", not a legit account name');
 		$self->{error}='3';
 		$self->{errorString}='$args{account}, "'.$args{account}.'", not a legit account name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2240,9 +2651,9 @@ sub modAccount{
 
 	#makes sure the account exists
 	if (!$self->accountExists($account)) {
-		warn('ZConf-Mail modAccount:6: The account "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='The account "'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2261,9 +2672,9 @@ sub modAccount{
 	#saves it
 	$self->{zconf}->writeSetFromLoadedConfig({config=>'mail'});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-Mail modAccount:36: ZConf failed to write the set out');
 		$self->{error}=36;
 		$self->{errorString}='ZConf failed to write the set out.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2277,14 +2688,14 @@ is undef, the default set is read.
 
     #read the default set
     $zcmail->readSet();
-    if($zcmail->{error}){
-        print "Error!\n";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
     #read the set 'someSet'
     $zcmail->readSet('someSet');
-    if($zcmail->{error}){
-        print "Error!\n";
+    if($zcmail->error){
+        warn('Error:'.$zcmail->error.': '.$zcmail->errorString);
     }
 
 =cut
@@ -2292,20 +2703,22 @@ is undef, the default set is read.
 sub readSet{
 	my $self=$_[0];
 	my $set=$_[1];
-
+	my $method='readSet';
 	
 	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	$self->{zconf}->read({config=>'mail', set=>$set});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-Mail readSet:2: ZConf error reading the config "mail".'.
-			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
-			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf error reading the config "mail".'.
 			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
 			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2351,8 +2764,14 @@ sub send{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $method='send';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	if (!defined($args{account})) {
 		$args{account}=$self->defaultSendableGet;
@@ -2360,9 +2779,10 @@ sub send{
 
 	#makes sure we have mail
 	if (!defined($args{mail})) {
-		warn('ZConf-Mail send:5: The hash arg "mail" is missing and thus nothing to send');
 		$self->{error}=5;
 		$self->{errorString}='The hash arg "mail" is missing and thus nothing to send';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
+		return undef;
 	}
 
 	#creates the SMTP connection
@@ -2379,10 +2799,9 @@ sub send{
 	while (defined($args{to}[$int])) {
 		$smtp->to($args{to}[$int]);
 		if ($?) {
-			warn('ZConf-Mail send:26: Failed to send the To address "'.
-				 $args{to}[$int].'"');
 			$self->{error}=26;
 			$self->{errorString}='Failed to send the To address "'.$args{to}[$int].'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		}
 		$int++;
 	}
@@ -2392,10 +2811,9 @@ sub send{
 	while (defined($args{cc}[$int])) {
 		$smtp->to($args{cc}[$int]);
 		if ($?) {
-			warn('ZConf-Mail send:26: Failed to send the CC address "'.
-				 $args{cc}[$int].'"');
 			$self->{error}=26;
 			$self->{errorString}='Failed to send the CC address "'.$args{cc}[$int].'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		}
 		$int++;
 	}
@@ -2405,26 +2823,25 @@ sub send{
 	while (defined($args{bcc}[$int])) {
 		$smtp->to($args{bcc}[$int]);
 		if ($?) {
-			warn('ZConf-Mail send:26: Failed to send the BCC address "'.
-				 $args{bcc}[$int].'"');
 			$self->{error}=26;
 			$self->{errorString}='Failed to send the BCC address "'.$args{bcc}[$int].'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		}
 		$int++;
 	}
 
 	#tries to start the data session
 	if (!$smtp->data) {
-		warn('ZConf-Mail send:27: Failed to start the data session');
 		$self->{error}=27;
 		$self->{errorString}='Failed to start the data session.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	#sends the data
 	if (!$smtp->datasend($args{mail})) {
-		warn('ZConf-Mail send:28: Failed to send the data.');
 		$self->{error}=28;
 		$self->{errorString}='Failed to send the data.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	#ends the data session
@@ -2438,9 +2855,9 @@ sub send{
 
 	#quits
 	if (!$smtp->quit) {
-		warn('ZConf-Mail send:30: Failed to end the SMTP session.');
 		$self->{error}=30;
 		$self->{errorString}='Failed to end the SMTP session.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 	}
 
 	#we know it has args if we get this far so we don't have to check it
@@ -2449,16 +2866,16 @@ sub send{
 	#saves it if asked
 	if ($args{save}) {
 		if (!defined($acctArgs{saveTo})) {
-			warn('ZConf-Mail send:37: saveTo is undefined and thus the mail can\'t be saved');
 			$self->{error}=37;
 			$self->{errorString}='saveTo is undefined and thus the mail can\'t be saved.';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 
 		if ($acctArgs{saveTo}=~ /^$/) {
-			warn('ZConf-Mail send:37: saveTo is set to "" and thus can\'t be saved');
 			$self->{error}=37;
 			$self->{errorString}='saveTo is is set to "" and thus the mail can\'t be saved';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		
@@ -2468,16 +2885,6 @@ sub send{
 			return undef;
 		}
 
-		return 1;
-	}
-
-	#if this is not defined, we don't save it
-	if (!defined($acctArgs{saveTo})) {
-		return 1;
-	}
-
-	#if this is set, we don't save it
-	if ($acctArgs{saveTo}=~ /^$/) {
 		return 1;
 	}
 
@@ -2504,33 +2911,39 @@ Checks to see if a sendable.
 sub sendable{
 	my $self=$_[0];
 	my $account=$_[1];
+	my $method='sendable';
 
+	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#This implements a simple check to make sure no one passed
 	#'pop3/' or something like that. It also makes sure that
 	#nothing past the account name is refered to.
 	my @split=split(/\//, $account);
 	if (!defined($split[1]) || defined($split[3])) {
-		warn('ZConf-Mail sendable:4: "'.$account.'" is not a valid acocunt name');
 		$self->{error}=4;
 		$self->{errorString}='"'.$account.'" is not a valid acocunt name';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#makes sure the account exists
 	if (!$self->accountExists($account)) {
-		warn('ZConf-Mail sendable:6: The account "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='The account "'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#makes sure it is a smtp account
 	if (!$account =~ /^smtp\//) {
-		warn('ZConf-Mail sendable:24: Account is not a sendable type');
 		$self->{error}=24;
 		$self->{errorString}='Account is not a sendable type.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2552,27 +2965,35 @@ sub sign{
 	my $account=$_[1];
 	my $body=$_[2];
 	my $to=$_[3];
+	my $method='sign';
+
+	#blanks any previous errors
+	$self->errorBlank;
+	if ($self->error) {
+		warn($self->{method}.' '.$method.': Failed to blank previous error');
+		return undef;
+	}
 
 	#makes sure the account exists
 	if (!$self->accountExists($account)) {
-		warn('Zconf-Mail delAccount:6: "'.$account.'" does not exist');
 		$self->{error}=6;
 		$self->{errorString}='"'.$account.'" does not exist';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#error if we don't have a body
 	if (!defined($body)) {
-		warn('ZConf-Mail sign:5: No body is defined');
 		$self->{error}=5;
 		$self->{errorString}='No body is defined';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#get the args for the account
 	my %Aargs=$self->getAccountArgs($account);
 	if ($self->{error}) {
-		warn('ZConf-Mail createEmailSimpe: getAccountArgs errors');
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2589,17 +3010,17 @@ sub sign{
 
 	#make sure the sign type is specified
 	if (!defined($Aargs{pgpType})) {
-		warn('ZConf-Mail sign:41: "pgpType" account arg is not defined');
 		$self->{error}=41;
 		$self->{errorString}='"pgpType" account arg is not defined';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#make sure a key is specified
 	if (!defined($Aargs{PGPkey})) {
-		warn('ZConf-Mail sign:41: "PGPkey" account arg is not defined');
 		$self->{error}=41;
 		$self->{errorString}='"PGPkey" account arg is not defined';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
@@ -2615,20 +3036,19 @@ sub sign{
 		$int++;
 	}
 	if (!$matched) {
-		warn('ZConf-Mail sign:43: The type, "'.$Aargs{pgpType}.'", is not a valid type');
 		$self->{error}=43;
 		$self->{errorString}='The type, "'.$Aargs{pgpType}.'", is not a valid type';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 
 	#creates the body directory
 	my $bodydir='/tmp/'.time().rand();
 	if (!mkdir($bodydir)) {
-		warn('ZConf-Mail sign:39: Faied to create the temporary directory,"'.
-			 $bodydir.'", for signing');
 		$self->{error}=39;
 		$self->{errorString}='Faied to create the temporary directory,"'.
 		                     $bodydir.'", for signing.';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 	my $bodyfile=$bodydir.'/body';
@@ -2641,11 +3061,10 @@ sub sign{
 	#open it and write to it
 	if (!open(BODYWRITE, '>'.$bodyfile)) {
 		rmdir($bodydir);
-		warn('ZConf-Mail sign:40: Failed to write body to "'.$bodyfile.
-			 '", for signing');
 		$self->{error}=40;
 		$self->{errorString}='Failed to write body to "'.$bodyfile.
 		                     '", for signing';
+		warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 		return undef;
 	}
 	print BODYWRITE $body;
@@ -2662,9 +3081,9 @@ sub sign{
 		$execstring=$execstring.' --clearsign '.$bodyfile;
 		system($execstring);
 		if ($? ne '0') {
-			warn('ZConf-Mail sign:44: Signing failed. Command="'.$execstring.'"');
 			$sign->{error}=44;
 			$sign->{errorString}='Signing failed. Command="'.$execstring.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$read=$bodyfile.'.asc';
@@ -2675,9 +3094,9 @@ sub sign{
 		$execstring=$execstring.' -a --detach-sign '.$bodyfile;
 		system($execstring);
 		if ($? ne '0') {
-			warn('ZConf-Mail sign:44: Signing failed. Command="'.$execstring.'"');
 			$sign->{error}=44;
 			$sign->{errorString}='Signing failed. Command="'.$execstring.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$read=$bodyfile.'.asc';
@@ -2688,9 +3107,9 @@ sub sign{
 		$execstring=$execstring.' -se -r '..' '.$bodyfile;
 		system($execstring);
 		if ($? ne '0') {
-			warn('ZConf-Mail sign:44: Signing failed. Command="'.$execstring.'"');
 			$sign->{error}=44;
 			$sign->{errorString}='Signing failed. Command="'.$execstring.'"';
+			warn($self->{module}.' '.$method.':'.$self->error.': '.$self->errorString);
 			return undef;
 		}
 		$read=$bodyfile.'.gpg';
@@ -2707,6 +3126,23 @@ sub sign{
 	return $sign;
 }
 
+=head1 ERROR RELATED METHODS
+
+=head2 error
+
+Returns the current error code and true if there is an error.
+
+If there is no error, undef is returned.
+
+    if($zconf->error){
+                warn('error: '.$zconf->error.":".$zconf->errorString);
+    }
+
+=cut
+
+sub error{
+    return $_[0]->{error};
+}
 
 =head2 errorBlank
 
@@ -2723,10 +3159,30 @@ It does the following.
 sub errorBlank{
 	my $self=$_[0];
 
+	if ($self->{perror}){
+		warn($self->{module}.' errorBlank; A permanent error is set');
+		return undef;
+	}
+
 	$self->{error}=undef;
 	$self->{errorString}="";
 
 	return 1;
+}
+
+=head2 errorString
+
+Returns the error string if there is one. If there is not,
+it will return ''.
+
+    if($zconf->error){
+                warn('error: '.$zconf->error.":".$zconf->errorString);
+    }
+
+=cut
+
+sub errorString{
+    return $_[0]->{errorString};
 }
 
 =head1 VARIABLES
@@ -2758,6 +3214,10 @@ If set to a boolean value of true, SSL will be used.
 =head3 accounts/pop3/*/deliverTo
 
 This is the account to deliver to.
+
+=head3 accounts/imap/*/deliverToFolder
+
+This is the folder in the account to deliver to.
 
 =head3 accounts/pop3/*/fetchable
 
@@ -2798,6 +3258,10 @@ If set to a boolean value of true, SSL will be used.
 
 This is the account to deliver to.
 
+=head3 accounts/imap/*/deliverToFolder
+
+This is the folder in the account to deliver to.
+
 =head3 accounts/imap/*/fetchable
 
 If this account should be considered fetchable. If this flag
@@ -2825,7 +3289,7 @@ The port on the server to use.
 This is the MBOX file to use.
 
 =head3 accounts/mbox/*/deliverTo
- 
+
 This is the account to deliver to.
 
 =head3 accounts/mbox/*/fetchable
@@ -2843,6 +3307,10 @@ This is the MBOX file to use.
 =head3 accounts/maildir/*/deliverTo
 
 This is the account to deliver to.
+
+=head3 accounts/imap/*/deliverToFolder
+
+This is the folder in the account to deliver to.
 
 =head3 accounts/maildir/*/fetchable
 
@@ -3185,6 +3653,10 @@ Sign type is not valid.
 =head2 44
 
 Signing failed.
+
+=head2 45
+
+The specified option is not a valid option.
 
 =head1 AUTHOR
 

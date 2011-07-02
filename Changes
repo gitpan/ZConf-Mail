@@ -1,5 +1,29 @@
 Revision history for ZConf-Mail
 
+2.0.0	2011-07-02/08:00
+		-Lots of misc cleanups.
+		-Remove all GUI stuff as it got broken some place and I've not had time to fix it.
+		-Add "bin/zcmailaccount".
+		-Cleanup Makefile.PL and README.
+		-Update MANIFEST.
+
+1.5.0	2011-04-08/02:15
+		-Change the order of use statements as using Net::SMTP_auth before ZConf can cause a segfault on some Perl compilations
+			for unknown reason.
+		-Some POD cleanup.
+		-Add errorblanking to some methods missing it.
+		-Add the ability to error permanently in new if it can't initialize properly.
+		-Actually implement the 'formatterSet' and 'formatterGet' instead of them being undocumented place holders.
+		-Cleanup error handling code.
+		-Document the 'deliverToFolder' option.
+		-Add 'error' and 'errorString'.
+		-MIME::Lite objects now have the quiet method called on them do to brain dead warning messages when doing GPG signing.
+		-Add 'quiet' to the args for 'createMimeLite'.
+		-Remove 'bin/zcmailimapcache'. It is not really being used for any thing currently. It is being moved into a more
+			comprehensive IMAP utility set that will be named 'ZConf::Mail::IMAPhelper'.
+			http://eesdp.org/svnweb/index.cgi/pubsvn/browse/Perl/ZConf%3A%3AMail%3A%3AIMAPhelper
+
+
 1.4.1	2010-06-26/07:10
 		-Correct the requirements in 'Makefile.PL'.
 		-Remove some mentions of 'ZConf::Runner' in 'ZConf::Mail::GUI::Curses'.
